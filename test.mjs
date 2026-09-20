@@ -2,9 +2,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { deflateSync } from 'node:zlib';
 
 const core = readFileSync(new URL('./core.js', import.meta.url), 'utf8');
-const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, normalizePalette, parsePaletteText, paletteFromPixels, mergePalette } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, normalizePalette, parsePaletteText, paletteFromPixels, mergePalette})');
+const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, normalizePalette, parsePaletteText, paletteFromPixels, mergePalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, normalizePalette, parsePaletteText, paletteFromPixels, mergePalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata})', {TextEncoder});
 const pixels = Array(64).fill(null);
 drawLine(pixels, 8, [0,0], [7,7], '#123456');
 assert.equal(pixels.filter(Boolean).length, 8, 'Fast diagonal strokes must be continuous');
@@ -26,58 +27,74 @@ floodFill(edge,8,7,7,'#123456');
 assert.ok(edge.every(p=>p==='#123456'));
 
 
-assert.equal(patterns('both').length,47);
-assert.equal(patterns('sides').length,16);
-assert.equal(patterns('corners').length,16);
-assert.equal(patternMask('both',16),0,'Disconnected diagonal is ignored');
-assert.equal(patternMask('both',17),1,'A diagonal with only one adjacent side is ignored');
-assert.equal(patternMask('both',19),19,'A diagonal with both adjacent sides connects');
-assert.equal(patternMask('both',255),255);
-assert.equal(patternMask('sides',255),15);
-assert.equal(patternMask('corners',16),1);
-assert.equal(patternMask('corners',15),0);
-for (const style of ['both','sides','corners']) {
-  const masks=patterns(style),reachable=new Set();
+assert.equal(patterns(255).length,47);
+assert.equal(patterns(85).length,16);
+assert.equal(patterns(170).length,16);
+assert.equal(patterns(68).length,4,'Left/right-only style');
+assert.equal(patterns(0).length,1,'No directions means one tile');
+assert.equal(patternMask(255,2),0,'Disconnected corner is ignored when both sides participate');
+assert.equal(patternMask(255,3),1,'One adjoining side is insufficient');
+assert.equal(patternMask(255,7),7,'Both adjoining sides allow the corner');
+assert.equal(patternMask(170,2),2,'Corner-only style keeps independent corners');
+assert.equal(patternMask(3,2),2,'Corner stays independent if one side is outside style');
+assert.equal(patternMask(193,128),0,'Top-left wraps to top and left');
+assert.equal(patternMask(193,193),193);
+const neighborProject=createProject();
+neighborProject.field={width:3,height:3,cells:Array(9).fill(null)};
+const positions=[1,2,5,8,7,6,3,0];
+for(let styleBits=0;styleBits<256;styleBits++) {
+  const masks=patterns(styleBits),reachable=new Set();
+  neighborProject.types[0].styleBits=styleBits;
   for(let raw=0;raw<256;raw++) {
-    const project=createProject();
-    project.types[0].style=style;
-    project.field={width:3,height:3,cells:Array(9).fill(null)};project.field.cells[4]='grass';
-    const positions=[1,5,7,3,2,8,6,0];
-    positions.forEach((index,bit)=>{if(raw&(1<<bit))project.field.cells[index]='grass';});
-    const resolved=resolveCell(project,4);
-    assert.equal(resolved.mask,patternMask(style,raw));
+    neighborProject.field.cells.fill(null);neighborProject.field.cells[4]='grass';
+    positions.forEach((index,bit)=>{if(raw&(1<<bit))neighborProject.field.cells[index]='grass';});
+    const resolved=resolveCell(neighborProject,4);
+    // Independent per-direction oracle: gate each enabled corner by its enabled side pair.
+    let expected=0;
+    for(let bit=0;bit<8;bit++) {
+      if(!(raw&styleBits&(1<<bit)))continue;
+      const prev=(bit+7)%8,next=(bit+1)%8;
+      if(bit%2 && (styleBits&(1<<prev)) && (styleBits&(1<<next)) && (!(raw&(1<<prev))||!(raw&(1<<next))))continue;
+      expected|=1<<bit;
+    }
+    assert.equal(resolved.mask,expected);
+    assert.equal(resolved.raw,raw,'Neighbor bit order must be clockwise from top');
     assert.ok(masks.includes(resolved.mask));reachable.add(resolved.mask);
   }
-  assert.equal(reachable.size,masks.length,'Every listed tile must be reachable');
+  assert.equal(reachable.size,masks.length,'Only reachable patterns may be listed');
 }
 const project=createProject();
 project.field={width:3,height:2,cells:['grass','grass','water','water','grass','grass']};
-assert.equal(resolveCell(project,0).raw,34,'N/W boundary must not wrap into another row');
+assert.equal(resolveCell(project,0).raw,12,'N/W boundary must not wrap into another row');
 assert.equal(resolveCell(project,2).mask,0,'Different types are disconnected');
 project.field={width:4,height:4,cells:Array(16).fill('grass')};
 assert.equal(resolveCell(project,5).mask,resolveCell(project,10).mask);
 const type=project.types[0], mask=resolveCell(project,5).mask;
-const shared=tilePixels(type,16,mask).slice();shared[0]='#abcdef';type.tiles.both[mask]=shared;
+const shared=tilePixels(type,16,mask).slice();shared[0]='#abcdef';type.tiles[mask]=shared;
 assert.equal(tilePixels(resolveCell(project,10).type,16,resolveCell(project,10).mask)[0],'#abcdef');
 const untouched=tilePixels(type,16,0)[0];assert.notEqual(untouched,'#abcdef');
-type.style='sides';type.tiles.sides[15]=Array(256).fill('#123456');
-type.style='both';assert.equal(tilePixels(type,16,mask)[0],'#abcdef','Style switch retains previous art');
+type.tiles[0]=Array(256).fill('#123456');
+assert.ok(discardedMasks(type,85).includes(255));
+setStyleBits(type,85);
+assert.equal(type.styleBits,85);assert.equal(type.tiles[255],undefined,'Incompatible patterns are discarded');
+assert.equal(type.tiles[0][0],'#123456','Compatible patterns retain their pixels');
+setStyleBits(type,255);assert.notEqual(tilePixels(type,16,255)[0],'#abcdef','Discarded pixels must not resurrect on another style change');
 const newType=makeType('new','Blank','#123456');assert.ok(tilePixels(newType,16,0).every(p=>p===null));
 resizeField(project,5,3);assert.equal(project.field.cells.length,15);assert.equal(project.field.cells[4],null);assert.equal(project.field.cells[5],'grass');
 removeType(project,'grass');assert.ok(project.field.cells.every(p=>p===null));
 const roundTrip=createProject();
-roundTrip.types[0].tiles.both[255]=Array(256).fill('#123456');
+roundTrip.types[0].tiles[255]=Array(256).fill('#123456');
 const serialize=value=>JSON.stringify(value);
 assert.equal(serialize(validateProject(JSON.parse(serialize(roundTrip)))),serialize(roundTrip));
 for(const corrupt of [
   p=>p.field.cells.push(null),p=>p.field.cells[0]='missing',p=>p.types.push(p.types[0]),
-  p=>p.types[0].style='invalid',p=>p.tileSize=999,p=>p.field.width=0,
-  p=>p.types[0].tiles.both[16]=Array(256).fill(null),p=>p.types[0].tiles.both[0]=['#123456'],
-  p=>p.types[0].tiles.both[0]=Array(256).fill('red'),p=>p.types[0].tiles.corners[16]=Array(256).fill(null),
+  p=>p.types[0].styleBits='invalid',p=>p.tileSize=999,p=>p.field.width=0,
+  p=>p.types[0].tiles[2]=Array(256).fill(null),p=>p.types[0].tiles[0]=['#123456'],
+  p=>p.types[0].tiles[0]=Array(256).fill('red'),p=>p.types[0].styleBits=256,p=>p.types[0].styleBits=-1,p=>p.types[0].styleBits=1.5,
 ]) {
   const invalid=createProject();corrupt(invalid);assert.throws(()=>validateProject(invalid));
 }
-console.log('Terrain checks passed: pixel tools, all 768 neighbor cases, 47/16/16 patterns, shared tiles, style preservation, field resizing, type removal, project validation.');
+console.log('Terrain checks passed: pixel tools, all 65,536 style/neighbor combinations, 47/16/16 patterns, shared tiles, style pruning, field resizing, type removal, project validation.');
 
 // Palette imports accept mixed formats without requiring a file header.
 const same=(actual,expected)=>assert.deepEqual(Array.from(actual),expected);
@@ -102,3 +119,57 @@ const custom=createProject();custom.palette=['#123456','#abcdef'];
 same(validateProject(JSON.parse(JSON.stringify(custom))).palette,custom.palette);
 custom.palette=[];same(validateProject(custom).palette,[]);
 console.log('Palette checks passed: mixed HEX/ARGB/RGB, bounds, ordering, PNG RGB pixels, duplicate handling, fresh defaults, JSON round-trip, fallback and empty palettes.');
+
+
+const atlasProject=createProject();
+atlasProject.types[1].styleBits=85;atlasProject.types[2].styleBits=68;
+const layout=atlasLayout(atlasProject),metadata=layout.metadata;
+assert.equal(metadata.format,'dot-map-atlas');assert.equal(metadata.version,1);
+same(metadata.bitOrder,['top','topRight','right','bottomRight','bottom','bottomLeft','left','topLeft']);
+assert.equal(metadata.tileSize,16);assert.equal(metadata.columns,8);
+same(metadata.types.map(t=>t.tiles.length),[47,16,4]);
+same(metadata.types.map(t=>t.tiles[0].y),[0,6,8]);
+assert.equal(layout.width,128);assert.equal(layout.height,144);
+const coordinates=new Set();
+metadata.types.forEach((t,typeIndex)=>{
+  same(t.tiles.map(tile=>tile.mask),Array.from(patterns(atlasProject.types[typeIndex].styleBits)));
+  t.tiles.forEach((tile,index)=>{
+    assert.equal(tile.x,index%8);assert.equal(tile.y,t.tiles[0].y+Math.floor(index/8));
+    assert.ok(!coordinates.has(`${tile.x},${tile.y}`));coordinates.add(`${tile.x},${tile.y}`);
+    assert.ok(tile.x*16<layout.width&&tile.y*16<layout.height);
+  });
+});
+assert.equal(coordinates.size,67,'No placeholder or unreachable tile records');
+assert.ok(!JSON.stringify(metadata).includes('pixels'));
+assert.equal(crc32(new TextEncoder().encode('123456789')),0xcbf43926,'Standard CRC32 check vector');
+
+// Encode a valid blank RGBA atlas, then run the same PNG-byte insertion used after canvas.toBlob.
+const header=Buffer.alloc(13);header.writeUInt32BE(layout.width,0);header.writeUInt32BE(layout.height,4);header[8]=8;header[9]=6;
+const raw=Buffer.alloc((layout.width*4+1)*layout.height);
+const original=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),pngChunk('IHDR',header),pngChunk('IDAT',deflateSync(raw)),pngChunk('IEND',new Uint8Array())]);
+const written=Buffer.from(embedAtlasMetadata(original,metadata));
+// Reader code independently walks the exported bytes; no reliance on the writer's CRC function.
+function readerCRC(bytes) {
+  const table=Array.from({length:256},(_,n)=>{for(let i=0;i<8;i++)n=n&1?0xedb88320^(n>>>1):n>>>1;return n>>>0;});
+  let crc=0xffffffff;for(const byte of bytes)crc=table[(crc^byte)&255]^(crc>>>8);return (crc^0xffffffff)>>>0;
+}
+let found=0,decoded,previousType='',metadataOffset=-1;
+for(let offset=8;offset<written.length;) {
+  const length=written.readUInt32BE(offset),type=written.toString('ascii',offset+4,offset+8),end=offset+12+length;
+  assert.ok(end<=written.length);
+  assert.equal(written.readUInt32BE(end-4),readerCRC(written.subarray(offset+4,end-4)),`CRC for ${type}`);
+  if(type==='tEXt') {
+    const data=written.subarray(offset+8,end-4),nul=data.indexOf(0);
+    if(data.toString('ascii',0,nul)==='dot-map-atlas') {
+      const json=data.toString('utf8',nul+1);assert.ok(!json.includes('\n'));
+      decoded=JSON.parse(json);found++;metadataOffset=offset;
+    }
+  }
+  if(type==='IEND'){assert.equal(previousType,'tEXt');assert.equal(end,written.length);}
+  previousType=type;offset=end;
+}
+assert.equal(found,1);assert.equal(JSON.stringify(decoded),JSON.stringify(metadata));assert.equal(decoded.types[0].name,'草地');
+assert.deepEqual(written.subarray(0,metadataOffset),original.subarray(0,original.length-12),'Original image chunks are preserved');
+assert.deepEqual(written.subarray(-12),original.subarray(-12));
+assert.throws(()=>embedAtlasMetadata(original.subarray(0,original.length-1),metadata));
+console.log('Atlas PNG checks passed: packed rows, ascending masks, no placeholder records, one UTF-8 tEXt before IEND, JSON round-trip and independently verified CRCs.');

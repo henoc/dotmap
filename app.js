@@ -1,13 +1,13 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const canvas = $('canvas'), ctx = canvas.getContext('2d');
-const storageKey = 'dot-map-project-v1';
+const storageKey = 'dot-map-project-v2';
 let project = createProject();
 let selection = { typeId:'grass', mask:255, cell:9 };
 let tool='pen', fieldTool='select', color='#628b53', brush=1, zoom=16, previewScale=2;
 let undoStack=[], redoStack=[], gesture=null, toastTimer;
 let tileCards=new Map(), fieldButtons=[];
-let paletteIndex=2, importedPalette=[], paletteReadId=0;
+let paletteIndex=2, importedPalette=[], paletteReadId=0, exporting=false, pendingStyleChange=null;
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function currentType() { return project.types.find(t=>t.id===selection.typeId)||project.types[0]; }
 function selectedTile() {
@@ -23,7 +23,7 @@ function normalizeSelection() {
       if(match) { selection.typeId=match.type.id;selection.mask=match.mask; }
     }
   }
-  if(!patterns(currentType().style).includes(selection.mask)) selection.mask=0;
+  if(!patterns(currentType().styleBits).includes(selection.mask)) selection.mask=0;
 }
 function snapshot() { return {project:clone(project),selection:{...selection}}; }
 function persist() {
@@ -71,14 +71,13 @@ function drawMap(target) {
     context.drawImage(cache.get(key),(index%width)*size,Math.floor(index/width)*size);
   });
 }
-function peering(element, style, mask) {
-  // Visual positions in a 3x3 matrix: NW N NE / W center E / SW S SE.
-  const bits=style==='corners'?[8,0,1,0,-1,0,4,0,2]:[128,1,16,8,-1,2,64,4,32];
+function peering(element, styleBits, mask) {
+  const bits=[128,1,2,64,-1,4,32,16,8];
   element.replaceChildren();
   bits.forEach(bit=>{
     const cell=document.createElement('i');
-    if(bit===-1||(bit&&Boolean(mask&bit)))cell.className='on';
-    if(bit===0||(style==='sides'&&bit>15))cell.className='off';
+    if(bit===-1||Boolean(mask&bit))cell.className='on';
+    if(bit!==-1&&!(styleBits&bit))cell.className='off';
     element.append(cell);
   });
 }
@@ -100,12 +99,15 @@ function renderTypes() {
     $('type-list').append(button);
   });
   $('type-count').textContent=project.types.length+' TYPES';
-  $('type-name').value=currentType().name;$('terrain-style').value=currentType().style;
-  $('style-description').textContent={both:'47枚 · 辺と角でつながる',sides:'16枚 · 上下左右でつながる',corners:'16枚 · 斜め4方向でつながる'}[currentType().style];
+  $('type-name').value=currentType().name;
+  const bits=currentType().styleBits;
+  document.querySelectorAll('[data-direction]').forEach(input=>input.checked=Boolean(bits & (1<<Number(input.dataset.direction))));
+  document.querySelectorAll('[data-style-preset]').forEach(button=>button.setAttribute('aria-pressed',Number(button.dataset.stylePreset)===bits));
+  $('style-description').textContent=`${patterns(bits).length}枚 · ${styleLabel(bits)}`;
   $('delete-type').disabled=project.types.length===1;$('add-type').disabled=project.types.length>=32;
 }
 function renderTileList() {
-  const type=currentType(), counts=usageCounts(type.id), list=patterns(type.style);
+  const type=currentType(), counts=usageCounts(type.id), list=patterns(type.styleBits);
   $('tile-list').replaceChildren();tileCards=new Map();
   const visible=list.filter(mask=>!$('used-only').checked||counts.has(mask));
   $('tile-count').textContent=`${visible.length} / ${list.length} TILES`;
@@ -113,7 +115,7 @@ function renderTileList() {
     const index=list.indexOf(mask),button=document.createElement('button');button.className='tile-card';button.dataset.mask=mask;
     button.setAttribute('aria-label',`タイル ${index+1}、パターン ${mask}、${counts.get(mask)||0}マスで使用`);
     const thumb=tileCanvas(type,mask);thumb.className='checker';
-    const diagram=document.createElement('span');diagram.className='peering';peering(diagram,type.style,mask);diagram.setAttribute('aria-hidden','true');
+    const diagram=document.createElement('span');diagram.className='peering';peering(diagram,type.styleBits,mask);diagram.setAttribute('aria-hidden','true');
     const name=document.createElement('small');name.textContent='#'+String(index+1).padStart(2,'0');
     const usage=document.createElement('span');usage.className='usage';usage.textContent=counts.has(mask)?counts.get(mask):'';
     button.append(thumb,diagram,name,usage);button.onclick=()=>{finishGesture();selection.cell=null;selection.mask=mask;renderGraphics();};
@@ -151,18 +153,18 @@ function renderGraphics() {
   $('canvas-info').textContent=`${size} × ${size} px`;$('zoom-label').textContent=zoom*100+'%';
   $('zoom-out').disabled=zoom<=2;$('zoom-in').disabled=zoom>=32;
   $('undo').disabled=!undoStack.length;$('redo').disabled=!redoStack.length;$('clear').disabled=!match;
-  const counts=usageCounts(currentType().id), list=patterns(currentType().style);
+  const counts=usageCounts(currentType().id), list=patterns(currentType().styleBits);
   for(const [mask,card] of tileCards) {
     card.setAttribute('aria-pressed',Boolean(match&&mask===match.mask));
-    card.classList.toggle('edited',Object.hasOwn(currentType().tiles[currentType().style],mask));
+    card.classList.toggle('edited',Object.hasOwn(currentType().tiles,mask));
     card.querySelector('.usage').textContent=counts.get(mask)||'';
     paintPixels(card.querySelector('canvas'),tilePixels(currentType(),size,mask),size);
   }
   $('tile-title').textContent=match?`${match.type.name} / タイル #${String(list.indexOf(match.mask)+1).padStart(2,'0')}`:'空のマス';
-  $('tile-subtitle').textContent=match?`${STYLES[match.type.style].label} · ${STYLES[match.type.style].count} tiles`:'「配置」でマップチップを置いてください';
+  $('tile-subtitle').textContent=match?`${styleLabel(match.type.styleBits)} · ${list.length} tiles`:'「配置」でマップチップを置いてください';
   $('shared-count').textContent=match?`${counts.get(match.mask)||0} マスがこのタイルを共有`:'このマスにはタイルがありません';
   $('selection-description').textContent=selection.cell!==null?`選択：列 ${selection.cell%project.field.width+1}・行 ${Math.floor(selection.cell/project.field.width)+1} ／ 同じ接続パターンへ一括反映`:'タイル一覧から選択中 ／ 未使用のパターンも編集できます';
-  peering($('selected-peering'),currentType().style,match?match.mask:0);
+  peering($('selected-peering'),currentType().styleBits,match?match.mask:0);
   refreshFieldGrid(match);
   drawMap($('map-preview'));
   $('map-preview').style.width=project.field.width*size*previewScale+'px';$('map-preview').style.height=project.field.height*size*previewScale+'px';
@@ -217,7 +219,7 @@ function pointOnCanvas(event) {
 }
 function inside([x,y]) { return x>=0&&y>=0&&x<project.tileSize&&y<project.tileSize; }
 function editablePixels(match) {
-  const bank=match.type.tiles[match.type.style];
+  const bank=match.type.tiles;
   if(!bank[match.mask])bank[match.mask]=tilePixels(match.type,project.tileSize,match.mask).slice();
   return bank[match.mask];
 }
@@ -288,28 +290,49 @@ function setFieldTool(value) {
   $('field-hint').textContent={select:'マスを選ぶと、その場所のタイルを編集できます。',paint:'左の種類を選び、クリック・ドラッグで配置します。',erase:'クリック・ドラッグで空のマスに戻します。'}[value];
 }
 function updateExportInfo() {
-  const target=$('export-target').value,type=currentType(),scale=Number($('export-scale').value),size=project.tileSize;
-  const count=STYLES[type.style].count,cols=type.style==='both'?8:4;
-  const [width,height]=target==='atlas'?[cols*size,Math.ceil(count/cols)*size]:target==='field'?[project.field.width*size,project.field.height*size]:[size,size];
-  $('export-info').textContent=`${width*scale} × ${height*scale} px・背景透過`+(target==='atlas'?` ／ ${count}枚を一覧順に横${cols}列で配置`:'');
-  $('export').disabled=target==='tile'&&!selectedTile();
+  const layout=atlasLayout(project), count=layout.metadata.types.reduce((n,type)=>n+type.tiles.length,0);
+  $('export-info').textContent=`全${project.types.length}種類・${count}枚 ／ ${layout.width} × ${layout.height} px・横8列`;
+  $('export').disabled=exporting;
 }
 function downloadBlob(blob, filename) {
   const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
 }
 function safeName(value) { return (value.trim()||'dot-map').replace(/[\\/:*?"<>|]/g,'_'); }
-function exportPNG() {
-  finishGesture();const target=$('export-target').value,source=document.createElement('canvas'),size=project.tileSize,type=currentType();let suffix;
-  if(target==='field'){drawMap(source);suffix='field';}
-  else if(target==='atlas') {
-    const list=patterns(type.style),cols=type.style==='both'?8:4;source.width=cols*size;source.height=Math.ceil(list.length/cols)*size;
-    const context=source.getContext('2d');list.forEach((mask,index)=>context.drawImage(tileCanvas(type,mask),(index%cols)*size,Math.floor(index/cols)*size));
-    suffix=safeName(type.name)+'-'+type.style+'-tiles';
-  } else {const match=selectedTile();if(!match)return;source.width=source.height=size;paintPixels(source,tilePixels(match.type,size,match.mask),size);suffix=safeName(match.type.name)+'-tile-'+match.mask;}
-  const scale=Number($('export-scale').value),output=document.createElement('canvas');output.width=source.width*scale;output.height=source.height*scale;
-  const context=output.getContext('2d');context.imageSmoothingEnabled=false;context.drawImage(source,0,0,output.width,output.height);
-  output.toBlob(blob=>{if(!blob){toast('PNGを書き出せませんでした');return;}downloadBlob(blob,safeName(project.name)+'-'+suffix+'.png');toast(`${output.width} × ${output.height} px のPNGを書き出しました`);},'image/png');
+async function exportPNG() {
+  if(exporting)return;
+  finishGesture();exporting=true;updateExportInfo();
+  try {
+    const {width,height,metadata}=atlasLayout(project), size=project.tileSize, filename=safeName(project.name)+'-atlas.png';
+    const output=document.createElement('canvas');output.width=width;output.height=height;
+    const context=output.getContext('2d');
+    metadata.types.forEach((entry,index)=>entry.tiles.forEach(tile=>{
+      context.drawImage(tileCanvas(project.types[index],tile.mask),tile.x*size,tile.y*size);
+    }));
+    const blob=await new Promise(resolve=>output.toBlob(resolve,'image/png'));
+    if(!blob)throw new Error('PNGを書き出せませんでした。');
+    const bytes=embedAtlasMetadata(new Uint8Array(await blob.arrayBuffer()),metadata);
+    downloadBlob(new Blob([bytes],{type:'image/png'}),filename);
+    toast(`対応表を埋め込んだアトラスPNGを書き出しました（${width} × ${height} px）`);
+  } catch(error) { toast(error.message || 'PNGを書き出せませんでした。'); }
+  finally {exporting=false;updateExportInfo();}
 }
+function changeStyle(styleBits) {
+  finishGesture();const type=currentType(), discarded=discardedMasks(type,styleBits);
+  if(discarded.length) {
+    pendingStyleChange={typeId:type.id,styleBits};renderTypes();
+    $('style-confirm-message').textContent=`「${type.name}」の編集済みタイル${discarded.length}枚は、新しい接続スタイルでは使えないため破棄されます。変更後もUndoで復元できます。`;
+    $('style-dialog').showModal();return;
+  }
+  change(()=>setStyleBits(type,styleBits));
+}
+$('style-cancel').onclick=()=>$('style-dialog').close();
+$('style-dialog').addEventListener('close',()=>pendingStyleChange=null);
+$('style-form').onsubmit=event=>{
+  event.preventDefault();if(!pendingStyleChange)return;
+  const {typeId,styleBits}=pendingStyleChange, type=project.types.find(t=>t.id===typeId);
+  if(type)change(()=>setStyleBits(type,styleBits));
+  $('style-dialog').close();
+};
 $('add-type').onclick=()=>{
   if(project.types.length>=32)return;
   change(()=>{const id='type-'+crypto.randomUUID();const type=makeType(id,'マップチップ '+(project.types.length+1),DEFAULT_PALETTE[(project.types.length*3)%DEFAULT_PALETTE.length]);project.types.push(type);selection={typeId:id,mask:0,cell:null};$('used-only').checked=false;});
@@ -321,7 +344,10 @@ $('delete-type').onclick=()=>{
   change(()=>{removeType(project,type.id);selection={typeId:project.types[0].id,mask:0,cell:null};});
 };
 $('type-name').onchange=()=>{const value=$('type-name').value.trim();change(()=>currentType().name=value||'名前のないマップチップ');};
-$('terrain-style').onchange=()=>{const value=$('terrain-style').value;change(()=>{currentType().style=value;selection.mask=0;});};
+document.querySelectorAll('[data-direction]').forEach(input=>input.onchange=()=>{
+  const bits=[...document.querySelectorAll('[data-direction]:checked')].reduce((mask,el)=>mask|(1<<Number(el.dataset.direction)),0);changeStyle(bits);
+});
+document.querySelectorAll('[data-style-preset]').forEach(button=>button.onclick=()=>changeStyle(Number(button.dataset.stylePreset)));
 $('filename').onchange=()=>{const value=$('filename').value.trim();change(()=>project.name=value||'無題の世界');};
 $('resize-field').onclick=()=>{
   const width=Number($('field-width').value),height=Number($('field-height').value);
@@ -332,13 +358,13 @@ $('resize-field').onclick=()=>{
 $('clear').onclick=()=>{
   const match=selectedTile();if(!match)return;
   if(!confirm('このタイルを透明に戻しますか？ 同じパターンの全マスに反映されます。元に戻すことができます。'))return;
-  change(()=>{match.type.tiles[match.type.style][match.mask]=Array(project.tileSize**2).fill(null);});
+  change(()=>{match.type.tiles[match.mask]=Array(project.tileSize**2).fill(null);});
 };
 $('undo').onclick=()=>history('undo');$('redo').onclick=()=>history('redo');
 $('used-only').onchange=()=>{renderTileList();renderGraphics();};
 $('grid').onclick=()=>{const visible=$('grid').getAttribute('aria-pressed')!=='true';$('grid').setAttribute('aria-pressed',visible);$('grid-overlay').hidden=!visible;};
 $('zoom-in').onclick=()=>{zoom=Math.min(32,zoom+2);renderGraphics();};$('zoom-out').onclick=()=>{zoom=Math.max(2,zoom-2);renderGraphics();};
-$('export').onclick=exportPNG;$('export-target').onchange=$('export-scale').onchange=updateExportInfo;
+$('export').onclick=exportPNG;
 $('color').oninput=event=>setColor(event.target.value);
 $('hex').oninput=()=>{const value=$('hex').value.trim();if(/^#?[0-9a-f]{6}$/i.test(value))setColor(value.startsWith('#')?value:'#'+value);};
 $('hex').onchange=()=>{let value=$('hex').value.trim();if(!value.startsWith('#'))value='#'+value;if(!setColor(value)){toast('6桁のカラーコードを入力してください');$('hex').value=color.toUpperCase();}};

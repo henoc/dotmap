@@ -65,27 +65,33 @@ function floodFill(pixels, size, x, y, color) {
   }
 }
 
-const STYLES = {
-  both: { label: 'Match Corners and Sides', count: 47 },
-  sides: { label: 'Match Sides', count: 16 },
-  corners: { label: 'Match Corners', count: 16 },
-};
-// Bits clockwise by group: N, E, S, W, NE, SE, SW, NW.
-const NEIGHBORS = [[0,-1],[1,0],[0,1],[-1,0],[1,-1],[1,1],[-1,1],[-1,-1]];
-function patternMask(style, raw) {
-  if (style === 'sides') return raw & 15;
-  if (style === 'corners') return (raw >> 4) & 15;
-  let result = raw & 15;
-  // Blob-47: a diagonal only matters when both adjoining sides connect.
-  for (const [corner, sides] of [[16,3],[32,6],[64,12],[128,9]]) {
-    if ((raw & corner) && (raw & sides) === sides) result |= corner;
+const STYLE_PRESETS = [
+  { bits:255, label:'Match Corners and Sides' },
+  { bits:85, label:'Match Sides' },
+  { bits:170, label:'Match Corners' },
+];
+const BIT_ORDER = ['top','topRight','right','bottomRight','bottom','bottomLeft','left','topLeft'];
+const NEIGHBORS = [[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]];
+function styleLabel(bits) { return STYLE_PRESETS.find(p=>p.bits===bits)?.label || 'カスタム接続'; }
+function patternMask(styleBits, raw) {
+  let mask=raw & styleBits;
+  for(let corner=1;corner<8;corner+=2) {
+    const sides=(1<<(corner-1)) | (1<<((corner+1)%8));
+    // Only constrain a corner when both adjacent sides participate in this style.
+    if((styleBits&sides)===sides && (mask&sides)!==sides) mask &= ~(1<<corner);
   }
-  return result;
+  return mask;
 }
-function patterns(style) {
-  return style === 'both'
-    ? [...new Set(Array.from({length:256}, (_,raw) => patternMask(style,raw)))].sort((a,b)=>a-b)
-    : Array.from({length:16},(_,i)=>i);
+function patterns(styleBits) {
+  return [...new Set(Array.from({length:256},(_,raw)=>patternMask(styleBits,raw)))].sort((a,b)=>a-b);
+}
+function discardedMasks(type, styleBits) {
+  const valid=new Set(patterns(styleBits));
+  return Object.keys(type.tiles).map(Number).filter(mask=>!valid.has(mask));
+}
+function setStyleBits(type, styleBits) {
+  for(const mask of discardedMasks(type,styleBits))delete type.tiles[mask];
+  type.styleBits=styleBits;
 }
 function resolveCell(project, index) {
   const { width, height, cells } = project.field;
@@ -98,15 +104,15 @@ function resolveCell(project, index) {
     const nx=x+dx, ny=y+dy;
     if(nx>=0 && nx<width && ny>=0 && ny<height && cells[ny*width+nx]===type.id) raw |= 1<<bit;
   });
-  return { type, mask: patternMask(type.style,raw), raw };
+  return { type, mask: patternMask(type.styleBits,raw), raw };
 }
 function makeType(id, name, color, seed = false) {
-  return { id, name, color, seed, style:'both', tiles:{both:{},sides:{},corners:{}} };
+  return { id, name, color, seed, styleBits:255, tiles:{} };
 }
 function createProject(tileSize = 16) {
   const rows = ['11111111','11122211','11222211','11221111','11331111','13311111','33311111','11111111'];
   return {
-    format:'dot-map', version:1, name:'小さな世界', tileSize, palette:DEFAULT_PALETTE.slice(),
+    format:'dot-map', version:2, name:'小さな世界', tileSize, palette:DEFAULT_PALETTE.slice(),
     types:[makeType('grass','草地','#789563',true),makeType('water','水辺','#759eac',true),makeType('path','小道','#be9b6f',true)],
     field:{width:8,height:8,cells:rows.join('').split('').map(c=>['grass','water','path'][Number(c)-1])},
   };
@@ -114,8 +120,8 @@ function createProject(tileSize = 16) {
 function shiftColor(hex, amount) {
   return '#'+[1,3,5].map(i=>Math.max(0,Math.min(255,parseInt(hex.slice(i,i+2),16)+amount)).toString(16).padStart(2,'0')).join('');
 }
-function tilePixels(type, tileSize, mask, style = type.style) {
-  const saved = type.tiles[style][mask];
+function tilePixels(type, tileSize, mask) {
+  const saved = type.tiles[mask];
   if (saved) return saved;
   const pixels = Array(tileSize*tileSize).fill(null);
   if (!type.seed) return pixels;
@@ -123,13 +129,9 @@ function tilePixels(type, tileSize, mask, style = type.style) {
   for(let y=0;y<tileSize;y++) for(let x=0;x<tileSize;x++) {
     let value=type.color;
     if ((x*13+y*7)%37===0) value=light;
-    if (style!=='corners') {
-      if((y<2&&!(mask&1))||(x>=tileSize-2&&!(mask&2))||(y>=tileSize-2&&!(mask&4))||(x<2&&!(mask&8))) value=dark;
-    }
-    if(style!=='sides') {
-      const corner=style==='corners'?mask:mask>>4;
-      if((x>=tileSize-3&&y<3&&!(corner&1))||(x>=tileSize-3&&y>=tileSize-3&&!(corner&2))||(x<3&&y>=tileSize-3&&!(corner&4))||(x<3&&y<3&&!(corner&8))) value=dark;
-    }
+    const absent=type.styleBits & ~mask;
+    if((y<2&&(absent&1))||(x>=tileSize-2&&(absent&4))||(y>=tileSize-2&&(absent&16))||(x<2&&(absent&64))) value=dark;
+    if((x>=tileSize-3&&y<3&&(absent&2))||(x>=tileSize-3&&y>=tileSize-3&&(absent&8))||(x<3&&y>=tileSize-3&&(absent&32))||(x<3&&y<3&&(absent&128))) value=dark;
     pixels[y*tileSize+x]=value;
   }
   return pixels;
@@ -149,24 +151,66 @@ function validateProject(value) {
   const fail=()=>{throw new Error('対応するDOTマップのプロジェクトファイルではありません。');};
   const isColor=c=>typeof c==='string'&&/^#[0-9a-f]{6}$/i.test(c);
   const isSize=n=>Number.isInteger(n)&&n>=1&&n<=32;
-  if(!value||value.format!=='dot-map'||value.version!==1||![8,16,32].includes(value.tileSize)||typeof value.name!=='string'||value.name.length>80)fail();
+  if(!value||value.format!=='dot-map'||value.version!==2||![8,16,32].includes(value.tileSize)||typeof value.name!=='string'||value.name.length>80)fail();
   if(!Array.isArray(value.types)||value.types.length<1||value.types.length>32)fail();
   const ids=new Set();
   const types=value.types.map(t=>{
-    if(!t||typeof t.id!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(t.id)||ids.has(t.id)||typeof t.name!=='string'||t.name.length>40||!isColor(t.color)||typeof t.seed!=='boolean'||!Object.hasOwn(STYLES,t.style)||!t.tiles)fail();
+    if(!t||typeof t.id!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(t.id)||ids.has(t.id)||typeof t.name!=='string'||t.name.length>40||!isColor(t.color)||typeof t.seed!=='boolean'||!Number.isInteger(t.styleBits)||t.styleBits<0||t.styleBits>255||!t.tiles)fail();
     ids.add(t.id);
-    const type=makeType(t.id,t.name,t.color,t.seed);type.style=t.style;
-    for(const style of Object.keys(STYLES)) {
-      const bank=t.tiles[style], valid=patterns(style);
-      if(!bank||typeof bank!=='object'||Array.isArray(bank))fail();
-      for(const [key,pixels] of Object.entries(bank)) {
-        if(!valid.includes(Number(key))||String(Number(key))!==key||!Array.isArray(pixels)||pixels.length!==value.tileSize**2||!pixels.every(p=>p===null||isColor(p)))fail();
-        type.tiles[style][key]=pixels.map(p=>p===null?null:p.toLowerCase());
-      }
+    const type=makeType(t.id,t.name,t.color,t.seed);type.styleBits=t.styleBits;
+    const bank=t.tiles, valid=patterns(type.styleBits);
+    if(typeof bank!=='object'||Array.isArray(bank))fail();
+    for(const [key,pixels] of Object.entries(bank)) {
+      if(!valid.includes(Number(key))||String(Number(key))!==key||!Array.isArray(pixels)||pixels.length!==value.tileSize**2||!pixels.every(p=>p===null||isColor(p)))fail();
+      type.tiles[key]=pixels.map(p=>p===null?null:p.toLowerCase());
     }
     return type;
   });
   const f=value.field;
   if(!f||!isSize(f.width)||!isSize(f.height)||!Array.isArray(f.cells)||f.cells.length!==f.width*f.height||!f.cells.every(c=>c===null||ids.has(c)))fail();
-  return {format:'dot-map',version:1,name:value.name,tileSize:value.tileSize,palette:normalizePalette(value.palette),types,field:{width:f.width,height:f.height,cells:f.cells.slice()}};
+  return {format:'dot-map',version:2,name:value.name,tileSize:value.tileSize,palette:normalizePalette(value.palette),types,field:{width:f.width,height:f.height,cells:f.cells.slice()}};
+}
+
+
+function atlasLayout(project, columns=8) {
+  let row=0;
+  const types=project.types.map(type=>{
+    const tiles=patterns(type.styleBits).map((mask,index)=>({mask,x:index%columns,y:row+Math.floor(index/columns)}));
+    row+=Math.ceil(tiles.length/columns);
+    return {id:type.id,name:type.name,styleBits:type.styleBits,tiles};
+  });
+  return {
+    width:columns*project.tileSize, height:row*project.tileSize,
+    metadata:{format:'dot-map-atlas',version:1,tileSize:project.tileSize,columns,bitOrder:BIT_ORDER.slice(),types},
+  };
+}
+function crc32(bytes) {
+  let crc=0xffffffff;
+  for(const byte of bytes) {
+    crc ^= byte;
+    for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);
+  }
+  return (crc^0xffffffff)>>>0;
+}
+function pngChunk(type, data) {
+  const chunk=new Uint8Array(data.length+12), view=new DataView(chunk.buffer);
+  view.setUint32(0,data.length);chunk.set(new TextEncoder().encode(type),4);chunk.set(data,8);
+  view.setUint32(chunk.length-4,crc32(chunk.subarray(4,chunk.length-4)));return chunk;
+}
+function embedAtlasMetadata(png, metadata) {
+  const signature=[137,80,78,71,13,10,26,10];
+  if(!signature.every((byte,i)=>png[i]===byte))throw new Error('PNGの形式が不正です。');
+  const view=new DataView(png.buffer,png.byteOffset,png.byteLength);
+  for(let offset=8;offset+12<=png.length;) {
+    const length=view.getUint32(offset),end=offset+12+length;
+    if(end>png.length)break;
+    if(view.getUint32(offset+4)===0x49454e44 && length===0 && end===png.length) {
+      // The engine contract explicitly uses UTF-8 JSON in tEXt (including Japanese names).
+      const data=new TextEncoder().encode('dot-map-atlas\0'+JSON.stringify(metadata));
+      const chunk=pngChunk('tEXt',data), result=new Uint8Array(png.length+chunk.length);
+      result.set(png.subarray(0,offset));result.set(chunk,offset);result.set(png.subarray(offset),offset+chunk.length);return result;
+    }
+    offset=end;
+  }
+  throw new Error('PNGのIENDチャンクが見つかりません。');
 }
