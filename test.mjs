@@ -193,3 +193,45 @@ console.log('Atlas PNG checks passed: packed rows, ascending masks, no placehold
   assert.throws(()=>importAtlas(createProject(size===8?16:8),back,rgba,layout.width,layout.height),/タイルサイズ/);
   console.log('Atlas import checks passed.');
 }
+
+// Native file permissions, cancellation and atomic replacement are shared by both editors.
+{
+  const {createFileIO,filename}=await import('./file-io.js').then(m=>m.default);
+  const config={id:'test-editor',description:'JSON',accept:{'application/json':['.json']}};
+  const source={name:'opened.json',getFile:async()=>({name:'opened.json'}),requestPermission:async options=>{
+    assert.equal(options.mode,'readwrite');return 'granted';
+  }};
+  let options, pickerCalls=0;
+  const destination={name:'renamed.json'};
+  const io=createFileIO(config,{
+    showOpenFilePicker:async opts=>{assert.equal(opts.multiple,true);return [source];},
+    showSaveFilePicker:async opts=>{pickerCalls++;options=opts;return destination;},
+  });
+  assert.equal((await io.openFiles(true))[0].handle,source);
+  assert.equal(await io.saveTarget('new.json',source),source);
+  assert.equal(pickerCalls,0,'Overwrite must retain the opened file without another picker');
+  assert.equal(await io.saveTarget('new.json',null,source),destination);
+  assert.equal(options.suggestedName,'new.json');assert.equal(options.startIn,source);
+  assert.equal(createFileIO(config,{}).canSave(),false);
+  assert.equal(createFileIO(config,{}).canOpen(),false);
+  await assert.rejects(io.saveTarget('x.json',{requestPermission:async()=> 'denied'}),/許可/);
+  assert.equal(pickerCalls,1,'Permission rejection must not redirect the save');
+  const cancelled=createFileIO(config,{showSaveFilePicker:async()=>{throw new DOMException('Cancelled','AbortError');}});
+  await assert.rejects(cancelled.saveTarget('x.json'),{name:'AbortError'});
+  const calls=[], blob=new Blob(['{"stage":1}'],{type:'application/json'});
+  await io.write({createWritable:async()=>({write:async data=>calls.push(await data.text()),close:async()=>calls.push('close')})},blob);
+  assert.deepEqual(calls,['{"stage":1}','close']);
+  for(const failure of ['write','close']) {
+    let aborted=false;
+    await assert.rejects(io.write({createWritable:async()=>({
+      write:async()=>{if(failure==='write')throw new Error('disk full');},
+      close:async()=>{if(failure==='close')throw new Error('disk full');},
+      abort:async()=>{aborted=true;},
+    })},blob),/disk full/);
+    assert.ok(aborted,'Failed writes must discard the temporary file');
+  }
+  assert.equal(filename('a/b','.json','untitled'),'a_b.json');
+  assert.equal(filename('scene.JSON','.json','untitled'),'scene.JSON');
+  assert.equal(filename(' ','.json','untitled'),'untitled.json');
+  console.log('File I/O checks passed: handles, overwrite permission, save-as destination, cancellation and atomic writes.');
+}

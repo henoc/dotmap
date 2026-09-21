@@ -2,6 +2,9 @@
 const $ = id => document.getElementById(id);
 const canvas = $('canvas'), ctx = canvas.getContext('2d');
 const storageKey = 'dot-map-project-v2';
+const fileIO = EditorFileIO.createFileIO({id:'dot-map-project',description:'DOT プロジェクト',accept:{'application/json':['.json','.dotmap']}});
+const pngIO = EditorFileIO.createFileIO({id:'dot-map-atlas',description:'アトラス PNG',accept:{'image/png':['.png']}});
+let fileTarget={handle:null,name:null}, fileBusy=false, downloadKind='project';
 let project = createProject();
 let selection = { typeId:'grass', mask:255, cell:9 };
 let tool='pen', fieldTool='select', color='#628b53', brush=1, zoom=16, previewScale=2;
@@ -25,13 +28,14 @@ function normalizeSelection() {
   }
   if(!patterns(currentType().styleBits).includes(selection.mask)) selection.mask=0;
 }
-function snapshot() { return {project:clone(project),selection:{...selection}}; }
+// Snapshots of the same document share its latest save target; open/new creates another target.
+function snapshot() { return {project:clone(project),selection:{...selection},fileTarget}; }
 function persist() {
   try { localStorage.setItem(storageKey,JSON.stringify(project));$('save-status').textContent='このブラウザに保存済み'; }
-  catch { $('save-status').textContent='自動保存できません';toast('自動保存できません。プロジェクト保存でファイルに残してください。'); }
+  catch { $('save-status').textContent='自動保存できません';toast('自動保存できません。「上書き保存」または「名前を付けて保存」でファイルに残してください。'); }
 }
 function commit(before, rebuild=true) {
-  if(JSON.stringify(before.project)!==JSON.stringify(project)) {
+  if(before.fileTarget!==fileTarget || JSON.stringify(before.project)!==JSON.stringify(project)) {
     undoStack.push(before);
     // ponytail: 40 whole-project snapshots; switch to pixel deltas for much larger projects.
     if(undoStack.length>40) undoStack.shift();
@@ -47,6 +51,7 @@ function history(direction) {
   const from=direction==='undo'?undoStack:redoStack,to=direction==='undo'?redoStack:undoStack;
   if(!from.length)return;
   to.push(snapshot());const state=from.pop();project=state.project;selection=state.selection;
+  fileTarget=state.fileTarget;refreshFileControls();
   persist();renderAll();
 }
 function toast(message) {
@@ -298,11 +303,16 @@ function downloadBlob(blob, filename) {
   const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
 }
 function safeName(value) { return (value.trim()||'dot-map').replace(/[\\/:*?"<>|]/g,'_'); }
-async function exportPNG() {
-  if(exporting)return;
-  finishGesture();exporting=true;updateExportInfo();
+async function exportPNG(downloadName=null) {
+  if(exporting||fileBusy||document.querySelector('dialog[open]'))return;
+  finishGesture();
+  const filename=safeName(project.name)+'-atlas.png';
+  if(!downloadName&&!pngIO.canSave()) {showDownload('png',filename);return;}
+  exporting=true;fileBusy=true;refreshFileControls();updateExportInfo();
   try {
-    const {width,height,metadata}=atlasLayout(project), size=project.tileSize, filename=safeName(project.name)+'-atlas.png';
+    // Choose the destination before asynchronous canvas encoding consumes the user gesture.
+    const target=downloadName ? null : await pngIO.saveTarget(filename);
+    const {width,height,metadata}=atlasLayout(project), size=project.tileSize;
     const output=document.createElement('canvas');output.width=width;output.height=height;
     const context=output.getContext('2d');
     metadata.types.forEach((entry,index)=>entry.tiles.forEach(tile=>{
@@ -311,10 +321,12 @@ async function exportPNG() {
     const blob=await new Promise(resolve=>output.toBlob(resolve,'image/png'));
     if(!blob)throw new Error('PNGを書き出せませんでした。');
     const bytes=embedAtlasMetadata(new Uint8Array(await blob.arrayBuffer()),metadata);
-    downloadBlob(new Blob([bytes],{type:'image/png'}),filename);
+    const result=new Blob([bytes],{type:'image/png'});
+    if(target)await pngIO.write(target,result);
+    else downloadBlob(result,EditorFileIO.filename(downloadName,'.png','atlas'));
     toast(`対応表を埋め込んだアトラスPNGを書き出しました（${width} × ${height} px）`);
-  } catch(error) { toast(error.message || 'PNGを書き出せませんでした。'); }
-  finally {exporting=false;updateExportInfo();}
+  } catch(error) { if(error.name!=='AbortError')toast(error.message || 'PNGを書き出せませんでした。'); }
+  finally {exporting=false;fileBusy=false;refreshFileControls();updateExportInfo();}
 }
 function changeStyle(styleBits) {
   finishGesture();const type=currentType(), discarded=discardedMasks(type,styleBits);
@@ -381,7 +393,7 @@ $('undo').onclick=()=>history('undo');$('redo').onclick=()=>history('redo');
 $('used-only').onchange=()=>{renderTileList();renderGraphics();};
 $('grid').onclick=()=>{const visible=$('grid').getAttribute('aria-pressed')!=='true';$('grid').setAttribute('aria-pressed',visible);$('grid-overlay').hidden=!visible;};
 $('zoom-in').onclick=()=>{zoom=Math.min(32,zoom+2);renderGraphics();};$('zoom-out').onclick=()=>{zoom=Math.max(2,zoom-2);renderGraphics();};
-$('export').onclick=exportPNG;
+$('export').onclick=()=>exportPNG();
 $('color').oninput=event=>setColor(event.target.value);
 $('hex').oninput=()=>{const value=$('hex').value.trim();if(/^#?[0-9a-f]{6}$/i.test(value))setColor(value.startsWith('#')?value:'#'+value);};
 $('hex').onchange=()=>{let value=$('hex').value.trim();if(!value.startsWith('#'))value='#'+value;if(!setColor(value)){toast('6桁のカラーコードを入力してください');$('hex').value=color.toUpperCase();}};
@@ -417,22 +429,65 @@ document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>setTool(b.data
 document.querySelectorAll('[data-field-tool]').forEach(b=>b.onclick=()=>setFieldTool(b.dataset.fieldTool));
 document.querySelectorAll('[data-size]').forEach(b=>b.onclick=()=>{finishGesture();brush=Number(b.dataset.size);$('brush-label').textContent=brush+' px';document.querySelectorAll('[data-size]').forEach(el=>el.setAttribute('aria-pressed',el===b));});
 document.querySelectorAll('[data-preview]').forEach(b=>b.onclick=()=>{previewScale=Number(b.dataset.preview);document.querySelectorAll('[data-preview]').forEach(el=>el.setAttribute('aria-pressed',el===b));renderGraphics();});
-$('save-project').onclick=()=>{finishGesture();downloadBlob(new Blob([JSON.stringify(project,null,2)],{type:'application/json'}),safeName(project.name)+'.dotmap.json');toast('マップチップとフィールドを保存しました');};
-$('open-project').onclick=()=>$('project-file').click();
-$('project-file').onchange=async()=>{
-  const file=$('project-file').files[0];$('project-file').value='';if(!file)return;
+function refreshFileControls() {
+  for(const id of ['new-project','open-project','save-project','save-project-as'])$(id).disabled=fileBusy;
+  document.querySelector('main').inert=fileBusy;
+  $('save-project').title=fileTarget.handle ? `${fileTarget.handle.name} に上書き保存 (Ctrl / ⌘ S)` : '保存先とファイル名を選択 (Ctrl / ⌘ S)';
+}
+function showDownload(kind,name) {
+  downloadKind=kind;$('download-name').value=name;$('download-dialog').showModal();$('download-name').focus();
+}
+async function saveProject(saveAs=false,downloadName=null) {
+  if(fileBusy||document.querySelector('dialog[open]'))return;
+  finishGesture();
+  const name=fileTarget.name||safeName(project.name)+'.dotmap.json';
+  if(!downloadName&&!fileIO.canSave()) {showDownload('project',name);return;}
+  fileBusy=true;refreshFileControls();
   try {
-    if(file.size>24*1024*1024)throw new Error('ファイルは24MB以下にしてください。');
-    const loaded=validateProject(JSON.parse(await file.text()));
-    if(!confirm('ファイルを開き、現在のプロジェクトを置き換えますか？ 元に戻すことができます。'))return;
-    change(()=>{project=loaded;selection={typeId:project.types[0].id,mask:0,cell:null};$('used-only').checked=false;fit();});toast('プロジェクトを読み込みました');
-  } catch(error) {toast(error instanceof SyntaxError?'JSONファイルを読み取れませんでした。':error.message);}
-};
+    const target=downloadName ? null : await fileIO.saveTarget(name,saveAs ? null : fileTarget.handle,fileTarget.handle);
+    const blob=new Blob([JSON.stringify(project,null,2)],{type:'application/json'});
+    if(target) {
+      await fileIO.write(target,blob);fileTarget.handle=target;fileTarget.name=target.name;
+    } else {
+      fileTarget.name=/\.(json|dotmap)$/i.test(downloadName) ? safeName(downloadName) : EditorFileIO.filename(downloadName,'.dotmap.json','dot-map');
+      downloadBlob(blob,fileTarget.name);
+    }
+    toast(`${fileTarget.name} ${target?'に保存しました':'をダウンロードしました'}`);
+  } catch(error) {if(error.name!=='AbortError')toast(`保存できませんでした。${error.message}`);}
+  finally {fileBusy=false;refreshFileControls();}
+}
+async function loadProjectFile(file,handle=null) {
+  if(file.size>24*1024*1024)throw new Error('ファイルは24MB以下にしてください。');
+  const loaded=validateProject(JSON.parse(await file.text()));
+  if(!confirm('ファイルを開き、現在のプロジェクトを置き換えますか？ 元に戻すことができます。'))return;
+  change(()=>{project=loaded;fileTarget={handle,name:file.name};selection={typeId:project.types[0].id,mask:0,cell:null};$('used-only').checked=false;fit();});
+  toast('プロジェクトを読み込みました');
+}
+async function openProject(file=null) {
+  if(fileBusy)return;
+  if(!file&&!fileIO.canOpen()) {$('project-file').click();return;}
+  finishGesture();fileBusy=true;refreshFileControls();
+  try {
+    if(file)await loadProjectFile(file);
+    else {const [entry]=await fileIO.openFiles();await loadProjectFile(entry.file,entry.handle);}
+  } catch(error) {if(error.name!=='AbortError')toast(error instanceof SyntaxError?'JSONファイルを読み取れませんでした。':error.message);}
+  finally {fileBusy=false;refreshFileControls();}
+}
+$('save-project').onclick=()=>saveProject();
+$('save-project-as').onclick=()=>saveProject(true);
+$('open-project').onclick=()=>openProject();
+$('project-file').onchange=()=>{const file=$('project-file').files[0];$('project-file').value='';if(file)openProject(file);};
+$('download-cancel').onclick=()=>$('download-dialog').close();
+$('download-form').onsubmit=event=>{event.preventDefault();const name=$('download-name').value;$('download-dialog').close();if(downloadKind==='png')exportPNG(name);else saveProject(true,name);};
 $('new-project').onclick=()=>{finishGesture();$('new-dialog').showModal();};$('cancel-new').onclick=()=>$('new-dialog').close();
 $('new-form').onsubmit=event=>{
-  event.preventDefault();change(()=>{project=createProject(Number($('new-size').value));project.name=$('new-name').value.trim()||'無題の世界';project.types=[makeType('terrain','マップチップ 1','#789563')];project.field.cells.fill(null);selection={typeId:'terrain',mask:0,cell:null};$('used-only').checked=false;fit();});$('new-dialog').close();toast('新しいプロジェクトを作成しました');
+  event.preventDefault();change(()=>{project=createProject(Number($('new-size').value));fileTarget={handle:null,name:null};project.name=$('new-name').value.trim()||'無題の世界';project.types=[makeType('terrain','マップチップ 1','#789563')];project.field.cells.fill(null);selection={typeId:'terrain',mask:0,cell:null};$('used-only').checked=false;fit();});refreshFileControls();$('new-dialog').close();toast('新しいプロジェクトを作成しました');
 };
 document.addEventListener('keydown',event=>{
+  if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='s'&&!document.querySelector('dialog[open]')) {
+    event.preventDefault();if(!event.repeat)saveProject(event.shiftKey);return;
+  }
+  if(fileBusy)return;
   if(event.target.matches('input,select,textarea')||event.isComposing||document.querySelector('dialog[open]'))return;
   const key=event.key.toLowerCase();
   if(event.metaKey||event.ctrlKey){if(key==='z'){event.preventDefault();history(event.shiftKey?'redo':'undo');}else if(key==='y'){event.preventDefault();history('redo');}return;}
@@ -442,4 +497,4 @@ document.addEventListener('keydown',event=>{
 let loadWarning='';
 try {const data=localStorage.getItem(storageKey);if(data){project=validateProject(JSON.parse(data));selection={typeId:project.types[0].id,mask:0,cell:null};}}
 catch {loadWarning='保存データを読み込めませんでした。サンプルを表示しています。';}
-fit();renderAll();setColor(color);if(loadWarning)toast(loadWarning);
+fit();renderAll();setColor(color);refreshFileControls();if(loadWarning)toast(loadWarning);
