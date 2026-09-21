@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import { deflateSync } from 'node:zlib';
 
 const core = readFileSync(new URL('./core.js', import.meta.url), 'utf8');
-const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, normalizePalette, parsePaletteText, paletteFromPixels, mergePalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, normalizePalette, parsePaletteText, paletteFromPixels, mergePalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas})', {TextEncoder, TextDecoder});
+const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, normalizePalette, parsePaletteText, paletteFromPixels, mergePalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, normalizePalette, parsePaletteText, paletteFromPixels, mergePalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles})', {TextEncoder, TextDecoder});
 const pixels = Array(64).fill(null);
 drawLine(pixels, 8, [0,0], [7,7], '#123456');
 assert.equal(pixels.filter(Boolean).length, 8, 'Fast diagonal strokes must be continuous');
@@ -234,4 +234,92 @@ console.log('Atlas PNG checks passed: packed rows, ascending masks, no placehold
   assert.equal(filename('scene.JSON','.json','untitled'),'scene.JSON');
   assert.equal(filename(' ','.json','untitled'),'untitled.json');
   console.log('File I/O checks passed: handles, overwrite permission, save-as destination, cancellation and atomic writes.');
+}
+
+// D4 orientation: each pixel and its corresponding neighbor bit must travel together.
+{
+const transforms=TILE_TRANSFORMS;
+const grids=[
+  [0,1,2,3,4,5,6,7,8], [2,1,0,5,4,3,8,7,6], [6,7,8,3,4,5,0,1,2],
+  [6,3,0,7,4,1,8,5,2], [8,7,6,5,4,3,2,1,0], [2,5,8,1,4,7,0,3,6],
+  [0,3,6,1,4,7,2,5,8], [8,5,2,7,4,1,6,3,0],
+];
+const neighborPixels=[1,2,5,8,7,6,3,0];
+transforms.forEach((transform,i)=>{
+  same(transformPixels(grids[0],3,transform),grids[i]);
+  neighborPixels.forEach((pixel,bit)=>{
+    const destination=neighborPixels.indexOf(grids[i].indexOf(pixel));
+    assert.equal(transformMask(1<<bit,transform),1<<destination);
+  });
+});
+const symmetric=makeType('sym','対称','#123456');
+symmetric.symmetry=7;
+assert.equal(symmetryTransforms(symmetric).length,8);
+for(let flags=0;flags<8;flags++) {
+  symmetric.symmetry=flags;
+  assert.equal(symmetryTransforms(symmetric).length,[1,2,2,4,4,8,8,8][flags]);
+}
+// Arbitrary custom styles must preserve both the style and the reduced masks.
+for(let bits=0;bits<256;bits++) {
+  symmetric.styleBits=bits;symmetric.symmetry=7;
+  const allowed=symmetryTransforms(symmetric), valid=patterns(bits);
+  for(const transform of allowed) {
+    assert.equal(transformMask(bits,transform),bits);
+    for(let raw=0;raw<256;raw++)assert.equal(transformMask(patternMask(bits,raw),transform),patternMask(bits,transformMask(raw,transform)));
+    for(const mask of valid)assert.ok(valid.includes(transformMask(mask,transform)));
+  }
+}
+assert.equal(supportedSymmetry(68),3,'Horizontal connections forbid quarter turns');
+symmetric.styleBits=68;symmetric.symmetry=4;
+assert.equal(symmetryTransforms(symmetric).length,1,'An unsupported rotation checkbox cannot enable 180° alone');
+symmetric.styleBits=255;symmetric.symmetry=4;
+symmetric.tiles={1:Array.from({length:64},(_,i)=>i===0?'#112233':i===10?'#abcdef':null)};
+const sourcePixels=symmetric.tiles[1].slice();
+assert.equal(derivedTile(symmetric,4).sourceMask,1);
+assert.equal(derivedTile(symmetric,4).transform.id,'rotate90');
+same(tilePixels(symmetric,8,4),Array.from(transformPixels(sourcePixels,8,transforms[3])));
+assert.deepEqual(Object.keys(symmetric.tiles),['1'],'Reading derived pixels must not create saved tiles');
+assert.equal(derivedTile(symmetric,0),null,'Unrelated masks stay placeholders');
+symmetric.symmetry=0;assert.ok(tilePixels(symmetric,8,4).every(p=>p===null));
+symmetric.symmetry=4;
+const copy=materializeTile(symmetric,8,4);
+assert.equal(derivedTile(symmetric,4),null);
+assert.notEqual(copy,symmetric.tiles[1]);
+copy[0]='#fedcba';assert.equal(symmetric.tiles[1][0],'#112233');
+symmetric.tiles[1][0]='#aabbcc';assert.equal(copy[7],'#112233','Editing the source leaves an existing copy unchanged');
+symmetric.tiles[16]=Array(64).fill(null);
+assert.equal(derivedTile(symmetric,16),null,'Explicitly cleared tiles override derived pixels');
+assert.ok(tilePixels(symmetric,8,16).every(p=>p===null));
+const beforeSource=symmetric.tiles[1].slice(), beforeCopy=Array.from(copy);
+assert.equal(bakeSymmetricTiles(symmetric,8,1),1,'Only the remaining unsaved counterpart is baked');
+same(symmetric.tiles[1],beforeSource);same(symmetric.tiles[4],beforeCopy);
+assert.ok(symmetric.tiles[16].every(p=>p===null),'Baking preserves saved transparency');
+same(symmetric.tiles[64],Array.from(transformPixels(beforeSource,8,transforms[5])));
+assert.equal(bakeSymmetricTiles(symmetric,8,1),0,'Baking again is a no-op');
+symmetric.tiles[1][0]=null;assert.notEqual(symmetric.tiles[64][56],null,'Baked copies do not follow their source');
+// A derived selection can itself be baked, without recursively deriving from unsaved tiles.
+symmetric.tiles={1:sourcePixels.slice()};
+assert.equal(bakeSymmetricTiles(symmetric,8,4),2);
+assert.equal(Object.hasOwn(symmetric.tiles,4),false,'The selected derived tile stays derived');
+same(symmetric.tiles[16],Array.from(transformPixels(sourcePixels,8,transforms[4])));
+symmetric.tiles={1:sourcePixels.slice(),64:Array(64).fill('#445566')};
+symmetric.symmetry=7;
+assert.equal(derivedTile(symmetric,4).sourceMask,64,'Fixed transform order makes multiple sources deterministic');
+const derivedBefore=JSON.stringify(tilePixels(symmetric,8,4));
+const reverseEntries=Object.fromEntries(Object.entries(symmetric.tiles).reverse());
+symmetric.tiles=reverseEntries;
+assert.equal(JSON.stringify(tilePixels(symmetric,8,4)),derivedBefore);
+const symmetryProject=createProject(8);symmetryProject.types=[symmetric];symmetryProject.field.cells.fill('sym');
+const restored=validateProject(JSON.parse(JSON.stringify(symmetryProject)));
+assert.equal(restored.types[0].symmetry,7);
+assert.equal(JSON.stringify(tilePixels(restored.types[0],8,4)),derivedBefore);
+const metadata=atlasLayout(symmetryProject).metadata;
+assert.equal(Object.hasOwn(metadata.types[0],'symmetry'),false,'Atlas metadata contains only the final tile layout');
+const legacy=JSON.parse(JSON.stringify(symmetryProject));delete legacy.types[0].symmetry;
+assert.equal(validateProject(legacy).types[0].symmetry,0,'Missing symmetry keeps legacy projects visually unchanged');
+for(const invalid of [-1,8,1.5,'7',null,true]) {
+  const data=JSON.parse(JSON.stringify(symmetryProject));data.types[0].symmetry=invalid;
+  assert.throws(()=>validateProject(data));
+}
+console.log('Symmetry checks passed: D4 bit/pixel orientation, all custom styles, allowed groups, derivation, copy-on-write, baking, deterministic sources and JSON validation.');
 }

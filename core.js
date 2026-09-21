@@ -72,6 +72,78 @@ const STYLE_PRESETS = [
 ];
 const BIT_ORDER = ['top','topRight','right','bottomRight','bottom','bottomLeft','left','topLeft'];
 const NEIGHBORS = [[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]];
+// D4 matrices act on screen coordinates (x right, y down). Order breaks source ties.
+const TILE_TRANSFORMS = [
+  {id:'identity',label:'そのまま',matrix:[1,0,0,1]},
+  {id:'flipX',label:'左右反転',matrix:[-1,0,0,1]},
+  {id:'flipY',label:'上下反転',matrix:[1,0,0,-1]},
+  {id:'rotate90',label:'90°回転',matrix:[0,-1,1,0]},
+  {id:'rotate180',label:'180°回転',matrix:[-1,0,0,-1]},
+  {id:'rotate270',label:'270°回転',matrix:[0,1,-1,0]},
+  {id:'diagonal',label:'対角反転',matrix:[0,1,1,0]},
+  {id:'antiDiagonal',label:'逆対角反転',matrix:[0,-1,-1,0]},
+];
+function transformMask(mask, transform) {
+  const [a,b,c,d]=transform.matrix;
+  let result=0;
+  NEIGHBORS.forEach(([x,y],bit)=>{
+    if(mask&(1<<bit))result |= 1<<NEIGHBORS.findIndex(([nx,ny])=>nx===a*x+b*y&&ny===c*x+d*y);
+  });
+  return result;
+}
+function transformPixels(pixels, size, transform) {
+  const [a,b,c,d]=transform.matrix, result=Array(size*size);
+  const ox=(a<0||b<0)?size-1:0, oy=(c<0||d<0)?size-1:0;
+  for(let y=0;y<size;y++)for(let x=0;x<size;x++)result[(c*x+d*y+oy)*size+a*x+b*y+ox]=pixels[y*size+x];
+  return result;
+}
+// symmetry bits: 1 = horizontal reflection, 2 = vertical reflection, 4 = quarter turns.
+function supportedSymmetry(styleBits) {
+  return [1,2,3].reduce((bits,index,i)=>bits | (transformMask(styleBits,TILE_TRANSFORMS[index])===styleBits ? 1<<i : 0),0);
+}
+const symmetryTransformCache=new Map();
+function symmetryTransforms(type) {
+  const bits=(type.symmetry || 0)&supportedSymmetry(type.styleBits);
+  if(!symmetryTransformCache.has(bits)) {
+    const generators=[1,2,3].filter((_,i)=>bits&(1<<i)).map(i=>TILE_TRANSFORMS[i]);
+    const reached=new Set(['identity']), queue=[TILE_TRANSFORMS[0]];
+    for(const transform of queue)for(const generator of generators) {
+      const [a,b,c,d]=transform.matrix,[e,f,g,h]=generator.matrix;
+      const matrix=[a*e+b*g,a*f+b*h,c*e+d*g,c*f+d*h];
+      const next=TILE_TRANSFORMS.find(t=>t.matrix.every((value,i)=>value===matrix[i]));
+      if(!reached.has(next.id)){reached.add(next.id);queue.push(next);}
+    }
+    symmetryTransformCache.set(bits,TILE_TRANSFORMS.filter(t=>reached.has(t.id)));
+  }
+  return symmetryTransformCache.get(bits);
+}
+function derivedTile(type, mask) {
+  if(Object.hasOwn(type.tiles,mask))return null;
+  for(const transform of symmetryTransforms(type)) {
+    // Orthogonal matrices invert by transposition: find a saved source, then transform it forward.
+    const [a,b,c,d]=transform.matrix;
+    const sourceMask=transformMask(mask,{matrix:[a,c,b,d]});
+    if(Object.hasOwn(type.tiles,sourceMask))return {sourceMask,transform};
+  }
+  return null;
+}
+function materializeTile(type, size, mask) {
+  if(!Object.hasOwn(type.tiles,mask))type.tiles[mask]=tilePixels(type,size,mask).slice();
+  return type.tiles[mask];
+}
+function symmetryTargets(type, mask) {
+  const targets=new Map();
+  for(const transform of symmetryTransforms(type)) {
+    const target=transformMask(mask,transform);
+    if(target!==mask&&!Object.hasOwn(type.tiles,target)&&!targets.has(target))targets.set(target,transform);
+  }
+  return targets;
+}
+function bakeSymmetricTiles(type, size, mask) {
+  const targets=symmetryTargets(type,mask), pixels=tilePixels(type,size,mask);
+  for(const [target,transform] of targets)type.tiles[target]=transformPixels(pixels,size,transform);
+  return targets.size;
+}
 function styleLabel(bits) { return STYLE_PRESETS.find(p=>p.bits===bits)?.label || 'カスタム接続'; }
 function patternMask(styleBits, raw) {
   let mask=raw & styleBits;
@@ -107,7 +179,7 @@ function resolveCell(project, index) {
   return { type, mask: patternMask(type.styleBits,raw), raw };
 }
 function makeType(id, name, color, seed = false) {
-  return { id, name, color, seed, styleBits:255, tiles:{} };
+  return { id, name, color, seed, styleBits:255, symmetry:0, tiles:{} };
 }
 function createProject(tileSize = 16) {
   const rows = ['11111111','11122211','11222211','11221111','11331111','13311111','33311111','11111111'];
@@ -123,6 +195,8 @@ function shiftColor(hex, amount) {
 function tilePixels(type, tileSize, mask) {
   const saved = type.tiles[mask];
   if (saved) return saved;
+  const derived=derivedTile(type,mask);
+  if(derived)return transformPixels(type.tiles[derived.sourceMask],tileSize,derived.transform);
   const pixels = Array(tileSize*tileSize).fill(null);
   if (!type.seed) return pixels;
   const dark=shiftColor(type.color,-24), light=shiftColor(type.color,22);
@@ -158,6 +232,8 @@ function validateProject(value) {
     if(!t||typeof t.id!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(t.id)||ids.has(t.id)||typeof t.name!=='string'||t.name.length>40||!isColor(t.color)||typeof t.seed!=='boolean'||!Number.isInteger(t.styleBits)||t.styleBits<0||t.styleBits>255||!t.tiles)fail();
     ids.add(t.id);
     const type=makeType(t.id,t.name,t.color,t.seed);type.styleBits=t.styleBits;
+    if(t.symmetry!==undefined&&(!Number.isInteger(t.symmetry)||t.symmetry<0||t.symmetry>7))fail();
+    type.symmetry=t.symmetry===undefined?0:t.symmetry;
     const bank=t.tiles, valid=patterns(type.styleBits);
     if(typeof bank!=='object'||Array.isArray(bank))fail();
     for(const [key,pixels] of Object.entries(bank)) {

@@ -109,6 +109,12 @@ function renderTypes() {
   document.querySelectorAll('[data-direction]').forEach(input=>input.checked=Boolean(bits & (1<<Number(input.dataset.direction))));
   document.querySelectorAll('[data-style-preset]').forEach(button=>button.setAttribute('aria-pressed',Number(button.dataset.stylePreset)===bits));
   $('style-description').textContent=`${patterns(bits).length}枚 · ${styleLabel(bits)}`;
+  const supported=supportedSymmetry(bits);
+  document.querySelectorAll('[data-symmetry]').forEach(input=>{
+    const bit=Number(input.dataset.symmetry);
+    input.disabled=!(supported&bit);input.checked=!input.disabled&&Boolean(currentType().symmetry&bit);
+    input.closest('label').title=input.disabled?'この接続スタイルでは使えません。':bit===4?'90°・180°・270°の回転を許可します。':'左右・上下を両方許可すると180°反転も使います。';
+  });
   $('delete-type').disabled=project.types.length===1;$('add-type').disabled=project.types.length>=32;
 }
 function renderTileList() {
@@ -123,7 +129,8 @@ function renderTileList() {
     const diagram=document.createElement('span');diagram.className='peering';peering(diagram,type.styleBits,mask);diagram.setAttribute('aria-hidden','true');
     const name=document.createElement('small');name.textContent='#'+String(index+1).padStart(2,'0');
     const usage=document.createElement('span');usage.className='usage';usage.textContent=counts.has(mask)?counts.get(mask):'';
-    button.append(thumb,diagram,name,usage);button.onclick=()=>{finishGesture();selection.cell=null;selection.mask=mask;renderGraphics();};
+    const badge=document.createElement('span');badge.className='derived-badge';badge.textContent='導出';badge.hidden=true;
+    button.append(thumb,diagram,name,usage,badge);button.onclick=()=>{finishGesture();selection.cell=null;selection.mask=mask;renderGraphics();};
     $('tile-list').append(button);tileCards.set(mask,button);
   });
   if(!visible.length){const p=document.createElement('p');p.className='empty-message';p.textContent='この種類はフィールドに未配置です。';$('tile-list').append(p);}
@@ -157,16 +164,26 @@ function renderGraphics() {
   $('grid-overlay').style.backgroundSize=`${zoom}px ${zoom}px`;
   $('canvas-info').textContent=`${size} × ${size} px`;$('zoom-label').textContent=zoom*100+'%';
   $('zoom-out').disabled=zoom<=2;$('zoom-in').disabled=zoom>=32;
-  $('undo').disabled=!undoStack.length;$('redo').disabled=!redoStack.length;$('clear').disabled=!match;
+  $('undo').disabled=!undoStack.length;$('redo').disabled=!redoStack.length;$('clear').disabled=!match||!Object.hasOwn(match.type.tiles,match.mask);
   const counts=usageCounts(currentType().id), list=patterns(currentType().styleBits);
   for(const [mask,card] of tileCards) {
+    const derived=derivedTile(currentType(),mask);
     card.setAttribute('aria-pressed',Boolean(match&&mask===match.mask));
     card.classList.toggle('edited',Object.hasOwn(currentType().tiles,mask));
+    card.classList.toggle('derived',Boolean(derived));card.querySelector('.derived-badge').hidden=!derived;
+    const origin=derived?`タイル #${String(list.indexOf(derived.sourceMask)+1).padStart(2,'0')} の${derived.transform.label}から導出`:Object.hasOwn(currentType().tiles,mask)?'実体タイル':'未編集';
+    card.title=origin;card.setAttribute('aria-label',`タイル ${list.indexOf(mask)+1}、パターン ${mask}、${counts.get(mask)||0}マスで使用、${origin}`);
     card.querySelector('.usage').textContent=counts.get(mask)||'';
     paintPixels(card.querySelector('canvas'),tilePixels(currentType(),size,mask),size);
   }
   $('tile-title').textContent=match?`${match.type.name} / タイル #${String(list.indexOf(match.mask)+1).padStart(2,'0')}`:'空のマス';
   $('tile-subtitle').textContent=match?`${styleLabel(match.type.styleBits)} · ${list.length} tiles`:'「配置」でマップチップを置いてください';
+  const derived=match&&derivedTile(match.type,match.mask);
+  $('tile-origin').textContent=!match?'':derived?`導出：タイル #${String(list.indexOf(derived.sourceMask)+1).padStart(2,'0')} → ${derived.transform.label}（描くと独立）`:Object.hasOwn(match.type.tiles,match.mask)?'実体タイル':'未編集';
+  $('tile-origin').classList.toggle('derived',Boolean(derived));
+  const targets=match?symmetryTargets(match.type,match.mask).size:0;
+  $('bake-symmetry').disabled=!targets;
+  $('bake-symmetry').textContent=`対称タイルへ焼き込む${targets?`（${targets}枚）`:''}`;
   $('shared-count').textContent=match?`${counts.get(match.mask)||0} マスがこのタイルを共有`:'このマスにはタイルがありません';
   $('selection-description').textContent=selection.cell!==null?`選択：列 ${selection.cell%project.field.width+1}・行 ${Math.floor(selection.cell/project.field.width)+1} ／ 同じ接続パターンへ一括反映`:'タイル一覧から選択中 ／ 未使用のパターンも編集できます';
   peering($('selected-peering'),currentType().styleBits,match?match.mask:0);
@@ -224,9 +241,7 @@ function pointOnCanvas(event) {
 }
 function inside([x,y]) { return x>=0&&y>=0&&x<project.tileSize&&y<project.tileSize; }
 function editablePixels(match) {
-  const bank=match.type.tiles;
-  if(!bank[match.mask])bank[match.mask]=tilePixels(match.type,project.tileSize,match.mask).slice();
-  return bank[match.mask];
+  return materializeTile(match.type,project.tileSize,match.mask);
 }
 function finishGesture(event) {
   if(!gesture||(event&&event.pointerId!==gesture.pointerId))return;
@@ -377,6 +392,15 @@ document.querySelectorAll('[data-direction]').forEach(input=>input.onchange=()=>
   const bits=[...document.querySelectorAll('[data-direction]:checked')].reduce((mask,el)=>mask|(1<<Number(el.dataset.direction)),0);changeStyle(bits);
 });
 document.querySelectorAll('[data-style-preset]').forEach(button=>button.onclick=()=>changeStyle(Number(button.dataset.stylePreset)));
+document.querySelectorAll('[data-symmetry]').forEach(input=>input.onchange=()=>{
+  const bit=Number(input.dataset.symmetry),checked=input.checked;
+  change(()=>{const type=currentType();type.symmetry=checked?type.symmetry|bit:type.symmetry&~bit;});
+});
+$('bake-symmetry').onclick=()=>{
+  const match=selectedTile();if(!match)return;
+  let count=0;change(()=>{count=bakeSymmetricTiles(match.type,project.tileSize,match.mask);});
+  toast(`${count}枚の対称タイルを焼き込みました。元タイルを変更しても、このコピーは変わりません。`);
+};
 $('filename').onchange=()=>{const value=$('filename').value.trim();change(()=>project.name=value||'無題の世界');};
 $('resize-field').onclick=()=>{
   const width=Number($('field-width').value),height=Number($('field-height').value);
@@ -386,8 +410,9 @@ $('resize-field').onclick=()=>{
 };
 $('clear').onclick=()=>{
   const match=selectedTile();if(!match)return;
-  if(!confirm('このタイルを透明に戻しますか？ 同じパターンの全マスに反映されます。元に戻すことができます。'))return;
-  change(()=>{match.type.tiles[match.mask]=Array(project.tileSize**2).fill(null);});
+  if(!Object.hasOwn(match.type.tiles,match.mask))return;
+  if(!confirm('このタイルを未編集に戻しますか？ 対称タイルがあればそこから導出されます。元に戻すことができます。'))return;
+  change(()=>{delete match.type.tiles[match.mask];});
 };
 $('undo').onclick=()=>history('undo');$('redo').onclick=()=>history('redo');
 $('used-only').onchange=()=>{renderTileList();renderGraphics();};
