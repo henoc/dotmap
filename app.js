@@ -8,7 +8,7 @@ const paletteIO = EditorFileIO.createFileIO({id:'dot-map-palette',description:'�
 let fileTarget={handle:null,name:null}, fileBusy=false, downloadKind='project';
 let project = createProject();
 let selection = { typeId:'grass', mask:255, cell:9 };
-let tool='pen', fieldTool='select', color='#628b53', brush=1, zoom=16, previewScale=2;
+let tool='pen', lastDrawTool='pen', fieldTool='select', color='#628b53', brush=1, zoom=16, previewScale=2;
 let undoStack=[], redoStack=[], gesture=null, toastTimer;
 let tileCards=new Map(), fieldButtons=[];
 let paletteIndex=2, importedPalette=[], paletteReadId=0, exporting=false, pendingStyleChange=null;
@@ -240,7 +240,9 @@ async function readPalettePNG(file) {
   } finally {URL.revokeObjectURL(url);}
 }
 function setTool(value) {
-  finishGesture();tool=value;document.querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.tool===tool));
+  finishGesture();
+  if(value==='picker'&&tool!=='picker')lastDrawTool=tool;
+  tool=value;document.querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.tool===tool));
 }
 function pointOnCanvas(event) {
   const r=canvas.getBoundingClientRect();return [Math.floor((event.clientX-r.left)/r.width*project.tileSize),Math.floor((event.clientY-r.top)/r.height*project.tileSize)];
@@ -258,18 +260,38 @@ function finishGesture(event) {
 canvas.addEventListener('pointerdown',event=>{
   if(gesture||event.button!==0)return;
   const point=pointOnCanvas(event),match=selectedTile();if(!match||!inside(point))return;event.preventDefault();
-  if(tool==='picker'||event.altKey) {const value=tilePixels(match.type,project.tileSize,match.mask)[point[1]*project.tileSize+point[0]];if(value)setColor(value);else toast('ここは透明です');return;}
+  if(tool==='picker'||event.altKey) {
+    const value=tilePixels(match.type,project.tileSize,match.mask)[point[1]*project.tileSize+point[0]];
+    if(value){setColor(value);if(tool==='picker')setTool(lastDrawTool);}
+    else toast('ここは透明です');
+    return;
+  }
   const before=snapshot();
   if(tool==='fill') {
     if(tilePixels(match.type,project.tileSize,match.mask)[point[1]*project.tileSize+point[0]]===color)return;
     floodFill(editablePixels(match),project.tileSize,...point,color);commit(before,false);return;
   }
+  const pixels=editablePixels(match);
+  if(tool==='line') {
+    gesture={kind:'line',pointerId:event.pointerId,element:canvas,before,start:point,match,base:pixels.slice()};
+    canvas.setPointerCapture(event.pointerId);
+    drawLine(pixels,project.tileSize,point,point,color,brush);renderGraphics();
+    return;
+  }
   gesture={kind:'pixel',pointerId:event.pointerId,element:canvas,before,previous:point,match};canvas.setPointerCapture(event.pointerId);
-  drawLine(editablePixels(match),project.tileSize,point,point,tool==='eraser'?null:color,brush);renderGraphics();
+  drawLine(pixels,project.tileSize,point,point,tool==='eraser'?null:color,brush);renderGraphics();
 });
 canvas.addEventListener('pointermove',event=>{
   const point=pointOnCanvas(event),valid=inside(point);$('coordinates').textContent=valid?`X: ${point[0]}　Y: ${point[1]}`:'X: —　Y: —';
-  if(!gesture||gesture.kind!=='pixel'||gesture.pointerId!==event.pointerId)return;
+  if(!gesture||gesture.pointerId!==event.pointerId)return;
+  if(gesture.kind==='line') {
+    const size=project.tileSize, end=valid?point:[Math.max(0,Math.min(size-1,point[0])),Math.max(0,Math.min(size-1,point[1]))];
+    const pixels=editablePixels(gesture.match);
+    for(let i=0;i<pixels.length;i++)pixels[i]=gesture.base[i];
+    drawLine(pixels,size,gesture.start,end,color,brush);renderGraphics();
+    return;
+  }
+  if(gesture.kind!=='pixel')return;
   if(!valid){gesture.previous=null;return;}
   drawLine(editablePixels(gesture.match),project.tileSize,gesture.previous||point,point,tool==='eraser'?null:color,brush);gesture.previous=point;renderGraphics();
 });
@@ -551,7 +573,7 @@ document.addEventListener('keydown',event=>{
   const key=event.key.toLowerCase();
   if(event.metaKey||event.ctrlKey){if(key==='z'){event.preventDefault();history(event.shiftKey?'redo':'undo');}else if(key==='y'){event.preventDefault();history('redo');}return;}
   if(gesture)return;
-  const shortcut={b:'pen',e:'eraser',g:'fill',i:'picker'}[key];if(!event.altKey&&shortcut){event.preventDefault();setTool(shortcut);}
+  const shortcut={b:'pen',l:'line',e:'eraser',g:'fill',i:'picker'}[key];if(!event.altKey&&shortcut){event.preventDefault();setTool(shortcut);}
 });
 let loadWarning='';
 try {const data=localStorage.getItem(storageKey);if(data){project=validateProject(JSON.parse(data));selection={typeId:project.types[0].id,mask:0,cell:null};}}
