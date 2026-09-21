@@ -4,6 +4,7 @@ const canvas = $('canvas'), ctx = canvas.getContext('2d');
 const storageKey = 'dot-map-project-v2';
 const fileIO = EditorFileIO.createFileIO({id:'dot-map-project',description:'DOT プロジェクト',accept:{'application/json':['.json','.dotmap']}});
 const pngIO = EditorFileIO.createFileIO({id:'dot-map-atlas',description:'アトラス PNG',accept:{'image/png':['.png']}});
+const paletteIO = EditorFileIO.createFileIO({id:'dot-map-palette',description:'カラーパレット',accept:{'text/plain':['.hex']}});
 let fileTarget={handle:null,name:null}, fileBusy=false, downloadKind='project';
 let project = createProject();
 let selection = { typeId:'grass', mask:255, cell:9 };
@@ -208,6 +209,8 @@ function updatePaletteSelection() {
   document.querySelectorAll('#palette [data-color]').forEach((b,i)=>b.setAttribute('aria-pressed',i===paletteIndex));
   $('palette-add').disabled=project.palette.includes(color);
   $('palette-delete').disabled=paletteIndex<0;
+  $('palette-export').disabled=!project.palette.length;
+  $('palette-snap').disabled=!project.palette.length;
 }
 function renderPalette() {
   const fragment=document.createDocumentFragment();
@@ -425,15 +428,21 @@ $('hex').onchange=()=>{let value=$('hex').value.trim();if(!value.startsWith('#')
 $('palette-add').onclick=()=>{if(!project.palette.includes(color))change(()=>project.palette.push(color));};
 $('palette-delete').onclick=()=>{if(paletteIndex>=0)change(()=>project.palette.splice(paletteIndex,1));};
 $('palette-import').onclick=()=>{
-  finishGesture();paletteReadId++;$('palette-text').value='';$('palette-file').value='';
+  finishGesture();paletteReadId++;$('palette-text').value='';$('palette-file').value='';$('palette-preset').value='';
   previewPaletteImport([],'テキストを貼り付けるか、ファイルを選んでください。');$('palette-dialog').showModal();
 };
 $('palette-cancel').onclick=()=>$('palette-dialog').close();
 $('palette-dialog').addEventListener('close',()=>paletteReadId++);
-$('palette-text').oninput=()=>{paletteReadId++;$('palette-file').value='';previewPaletteImport(parsePaletteText($('palette-text').value));};
+$('palette-preset').onchange=()=>{
+  paletteReadId++;$('palette-text').value='';$('palette-file').value='';
+  const preset=PALETTE_PRESETS.find(p=>p.id===$('palette-preset').value);
+  if(!preset){previewPaletteImport([],'テキストを貼り付けるか、ファイルを選んでください。');return;}
+  previewPaletteImport(preset.colors.slice(),`プリセット「${preset.name}」：${preset.colors.length}色`);
+};
+$('palette-text').oninput=()=>{paletteReadId++;$('palette-file').value='';$('palette-preset').value='';previewPaletteImport(parsePaletteText($('palette-text').value));};
 $('palette-file').onchange=async()=>{
   const file=$('palette-file').files[0];if(!file)return;
-  const readId=++paletteReadId;previewPaletteImport([],'読み込み中…');$('palette-text').value='';
+  const readId=++paletteReadId;previewPaletteImport([],'読み込み中…');$('palette-text').value='';$('palette-preset').value='';
   try {
     let colors;
     if(/\.png$/i.test(file.name)||file.type==='image/png')colors=await readPalettePNG(file);
@@ -450,6 +459,28 @@ $('palette-form').onsubmit=event=>{
   change(()=>project.palette=mergePalette(project.palette,importedPalette,mode));
   $('palette-dialog').close();toast(`パレットを${mode==='append'?'追加':'置き換え'}しました（${project.palette.length}色）`);
 };
+$('palette-snap').onclick=()=>{
+  if(!project.palette.length)return;
+  const type=currentType();
+  change(()=>snapTypeToPalette(type,project.palette));
+  toast(`「${type.name}」の色をパレットに寄せました`);
+};
+async function savePalette(downloadName=null) {
+  if(fileBusy||document.querySelector('dialog[open]')||!project.palette.length)return;
+  finishGesture();
+  const name=EditorFileIO.filename(project.name,'.hex','palette');
+  if(!downloadName&&!paletteIO.canSave()) {showDownload('palette',name);return;}
+  fileBusy=true;refreshFileControls();
+  try {
+    const target=downloadName ? null : await paletteIO.saveTarget(name);
+    const blob=new Blob([serializePaletteHex(project.palette)],{type:'text/plain'});
+    if(target)await paletteIO.write(target,blob);
+    else downloadBlob(blob,EditorFileIO.filename(downloadName,'.hex','palette'));
+    toast(`パレットを${target?'保存':'ダウンロード'}しました（${project.palette.length}色）`);
+  } catch(error) {if(error.name!=='AbortError')toast(`保存できませんでした。${error.message}`);}
+  finally {fileBusy=false;refreshFileControls();}
+}
+$('palette-export').onclick=()=>savePalette();
 document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>setTool(b.dataset.tool));
 document.querySelectorAll('[data-field-tool]').forEach(b=>b.onclick=()=>setFieldTool(b.dataset.fieldTool));
 document.querySelectorAll('[data-size]').forEach(b=>b.onclick=()=>{finishGesture();brush=Number(b.dataset.size);$('brush-label').textContent=brush+' px';document.querySelectorAll('[data-size]').forEach(el=>el.setAttribute('aria-pressed',el===b));});
@@ -503,7 +534,7 @@ $('save-project-as').onclick=()=>saveProject(true);
 $('open-project').onclick=()=>openProject();
 $('project-file').onchange=()=>{const file=$('project-file').files[0];$('project-file').value='';if(file)openProject(file);};
 $('download-cancel').onclick=()=>$('download-dialog').close();
-$('download-form').onsubmit=event=>{event.preventDefault();const name=$('download-name').value;$('download-dialog').close();if(downloadKind==='png')exportPNG(name);else saveProject(true,name);};
+$('download-form').onsubmit=event=>{event.preventDefault();const name=$('download-name').value;$('download-dialog').close();if(downloadKind==='png')exportPNG(name);else if(downloadKind==='palette')savePalette(name);else saveProject(true,name);};
 $('new-project').onclick=()=>{finishGesture();$('new-dialog').showModal();};$('cancel-new').onclick=()=>$('new-dialog').close();
 $('new-form').onsubmit=event=>{
   event.preventDefault();change(()=>{project=createProject(Number($('new-size').value));fileTarget={handle:null,name:null};project.name=$('new-name').value.trim()||'無題の世界';project.types=[makeType('terrain','マップチップ 1','#789563')];project.field.cells.fill(null);selection={typeId:'terrain',mask:0,cell:null};$('used-only').checked=false;fit();});refreshFileControls();$('new-dialog').close();toast('新しいプロジェクトを作成しました');
@@ -522,4 +553,5 @@ document.addEventListener('keydown',event=>{
 let loadWarning='';
 try {const data=localStorage.getItem(storageKey);if(data){project=validateProject(JSON.parse(data));selection={typeId:project.types[0].id,mask:0,cell:null};}}
 catch {loadWarning='保存データを読み込めませんでした。サンプルを表示しています。';}
+PALETTE_PRESETS.forEach(preset=>{const option=document.createElement('option');option.value=preset.id;option.textContent=preset.name;$('palette-preset').append(option);});
 fit();renderAll();setColor(color);refreshFileControls();if(loadWarning)toast(loadWarning);

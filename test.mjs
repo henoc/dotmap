@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import { deflateSync } from 'node:zlib';
 
 const core = readFileSync(new URL('./core.js', import.meta.url), 'utf8');
-const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, normalizePalette, parsePaletteText, paletteFromPixels, mergePalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, normalizePalette, parsePaletteText, paletteFromPixels, mergePalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles})', {TextEncoder, TextDecoder});
+const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles})', {TextEncoder, TextDecoder});
 const pixels = Array(64).fill(null);
 drawLine(pixels, 8, [0,0], [7,7], '#123456');
 assert.equal(pixels.filter(Boolean).length, 8, 'Fast diagonal strokes must be continuous');
@@ -118,7 +118,25 @@ const fresh=createProject();assert.equal(fresh.palette.length,20);fresh.palette.
 const custom=createProject();custom.palette=['#123456','#abcdef'];
 same(validateProject(JSON.parse(JSON.stringify(custom))).palette,custom.palette);
 custom.palette=[];same(validateProject(custom).palette,[]);
-console.log('Palette checks passed: mixed HEX/ARGB/RGB, bounds, ordering, PNG RGB pixels, duplicate handling, fresh defaults, JSON round-trip, fallback and empty palettes.');
+assert.equal(PALETTE_PRESETS.find(p=>p.id==='nature').colors,DEFAULT_PALETTE);
+for(const preset of PALETTE_PRESETS) {
+  assert.ok(preset.colors.every(c=>typeof c==='string'&&/^#[0-9a-f]{6}$/.test(c)));
+  same(parsePaletteText(serializePaletteHex(preset.colors)),Array.from(preset.colors));
+}
+same(parsePaletteText(serializePaletteHex([])),[]);
+assert.equal(nearestPaletteColor('#010000',['#000000','#ffffff']),'#000000');
+assert.equal(nearestPaletteColor('#000000',['#000000','#ffffff']),'#000000');
+assert.equal(nearestPaletteColor('#ffffff',['#000000','#ffffff']),'#ffffff');
+const snapType=makeType('snap','寄せ','#010000');
+snapType.symmetry=4;
+snapType.tiles={1:Array.from({length:64},(_,i)=>i===0?'#010000':i===1?null:i===2?'#000000':null)};
+snapTypeToPalette(snapType,['#000000','#ffffff']);
+assert.equal(snapType.color,'#000000');
+assert.equal(snapType.tiles[1][0],'#000000');
+assert.equal(snapType.tiles[1][1],null);
+assert.equal(snapType.tiles[1][2],'#000000');
+assert.deepEqual(Object.keys(snapType.tiles),['1'],'Snapping must not materialize derived tiles');
+console.log('Palette checks passed: mixed HEX/ARGB/RGB, bounds, ordering, PNG RGB pixels, duplicate handling, fresh defaults, JSON round-trip, fallback and empty palettes, presets, hex export, nearest-color snap.');
 
 
 const atlasProject=createProject();
