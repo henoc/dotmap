@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import { deflateSync } from 'node:zlib';
 
 const core = readFileSync(new URL('./core.js', import.meta.url), 'utf8');
-const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, normalizePalette, parsePaletteText, paletteFromPixels, mergePalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, normalizePalette, parsePaletteText, paletteFromPixels, mergePalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata})', {TextEncoder});
+const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, normalizePalette, parsePaletteText, paletteFromPixels, mergePalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, normalizePalette, parsePaletteText, paletteFromPixels, mergePalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas})', {TextEncoder, TextDecoder});
 const pixels = Array(64).fill(null);
 drawLine(pixels, 8, [0,0], [7,7], '#123456');
 assert.equal(pixels.filter(Boolean).length, 8, 'Fast diagonal strokes must be continuous');
@@ -173,3 +173,23 @@ assert.deepEqual(written.subarray(0,metadataOffset),original.subarray(0,original
 assert.deepEqual(written.subarray(-12),original.subarray(-12));
 assert.throws(()=>embedAtlasMetadata(original.subarray(0,original.length-1),metadata));
 console.log('Atlas PNG checks passed: packed rows, ascending masks, no placeholder records, one UTF-8 tEXt before IEND, JSON round-trip and independently verified CRCs.');
+
+// Round trip: the exported bytes read back into a project as new types with the atlas pixels.
+{
+  const back=readAtlasMetadata(written);
+  assert.equal(JSON.stringify(back),JSON.stringify(metadata));
+  assert.throws(()=>readAtlasMetadata(original),/dot-map-atlas/);
+  const rgba=new Uint8Array(layout.width*layout.height*4), size=atlasProject.tileSize, water=metadata.types[1], tile=water.tiles[3];
+  rgba.set([0x12,0x34,0x56,255],((tile.y*size+1)*layout.width+tile.x*size+2)*4);   // one opaque pixel at (2,1) of that tile
+  const target=createProject(size);
+  const added=importAtlas(target,back,rgba,layout.width,layout.height);
+  assert.equal(added.length,metadata.types.length);
+  assert.equal(added.map(t=>t.id).join(),'grass-2,water-2,path-2','ids stay unique against the existing types');
+  assert.equal(added[1].styleBits,85);
+  assert.equal(Object.keys(added[1].tiles).length,water.tiles.length);
+  const pixels=added[1].tiles[tile.mask];
+  assert.equal(pixels[1*size+2],'#123456');assert.equal(pixels.filter(Boolean).length,1,'transparent pixels become null');
+  assert.equal(added[1].color,'#123456');
+  assert.throws(()=>importAtlas(createProject(size===8?16:8),back,rgba,layout.width,layout.height),/タイルサイズ/);
+  console.log('Atlas import checks passed.');
+}

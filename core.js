@@ -151,7 +151,7 @@ function validateProject(value) {
   const fail=()=>{throw new Error('対応するDOTマップのプロジェクトファイルではありません。');};
   const isColor=c=>typeof c==='string'&&/^#[0-9a-f]{6}$/i.test(c);
   const isSize=n=>Number.isInteger(n)&&n>=1&&n<=32;
-  if(!value||value.format!=='dot-map'||value.version!==2||![8,16,32].includes(value.tileSize)||typeof value.name!=='string'||value.name.length>80)fail();
+  if(!value||value.format!=='dot-map'||value.version!==2||![8,16,32,64].includes(value.tileSize)||typeof value.name!=='string'||value.name.length>80)fail();
   if(!Array.isArray(value.types)||value.types.length<1||value.types.length>32)fail();
   const ids=new Set();
   const types=value.types.map(t=>{
@@ -213,4 +213,53 @@ function embedAtlasMetadata(png, metadata) {
     offset=end;
   }
   throw new Error('PNGのIENDチャンクが見つかりません。');
+}
+function readAtlasMetadata(png) {
+  const fail=()=>{throw new Error('dot-map-atlas の対応表が入ったPNGではありません。');};
+  const signature=[137,80,78,71,13,10,26,10];
+  if(!signature.every((byte,i)=>png[i]===byte))fail();
+  const view=new DataView(png.buffer,png.byteOffset,png.byteLength), key=new TextEncoder().encode('dot-map-atlas\0');
+  for(let offset=8;offset+12<=png.length;) {
+    const length=view.getUint32(offset),end=offset+12+length;
+    if(end>png.length)break;
+    const data=png.subarray(offset+8,end-4);
+    if(view.getUint32(offset+4)===0x74455874 && key.every((byte,i)=>data[i]===byte)) {
+      let value;try{value=JSON.parse(new TextDecoder().decode(data.subarray(key.length)));}catch{fail();}
+      if(!value||value.format!=='dot-map-atlas'||value.version!==1||![8,16,32,64].includes(value.tileSize)||!Number.isInteger(value.columns)||value.columns<1||!Array.isArray(value.types))fail();
+      for(const t of value.types) {
+        if(!t||typeof t.id!=='string'||typeof t.name!=='string'||!Number.isInteger(t.styleBits)||t.styleBits<0||t.styleBits>255||!Array.isArray(t.tiles))fail();
+        if(!t.tiles.every(tile=>tile&&Number.isInteger(tile.mask)&&Number.isInteger(tile.x)&&Number.isInteger(tile.y)&&tile.x>=0&&tile.y>=0))fail();
+      }
+      return value;
+    }
+    offset=end;
+  }
+  fail();
+}
+// rgba = decoded atlas pixels (width*height*4). Adds one type per entry; ids are made unique, unknown masks are skipped.
+function importAtlas(project, metadata, rgba, width, height) {
+  if(metadata.tileSize!==project.tileSize)throw new Error(`タイルサイズが違います（アトラス ${metadata.tileSize}px、プロジェクト ${project.tileSize}px）。`);
+  const size=project.tileSize, ids=new Set(project.types.map(t=>t.id)), added=[];
+  for(const entry of metadata.types) {
+    if(project.types.length+added.length>=32)break;
+    let id=entry.id.replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,48)||'type';
+    for(let n=2;ids.has(id);n++)id=`${entry.id.slice(0,48)}-${n}`;
+    ids.add(id);
+    const type=makeType(id,entry.name.slice(0,40)||id,'#888888');type.styleBits=entry.styleBits;
+    const valid=new Set(patterns(entry.styleBits)), counts=new Map();
+    for(const tile of entry.tiles) {
+      if(!valid.has(tile.mask)||(tile.x+1)*size>width||(tile.y+1)*size>height)continue;
+      const pixels=Array(size*size);
+      for(let y=0;y<size;y++)for(let x=0;x<size;x++) {
+        const i=((tile.y*size+y)*width+tile.x*size+x)*4;
+        const color=rgba[i+3]<128?null:'#'+[rgba[i],rgba[i+1],rgba[i+2]].map(n=>n.toString(16).padStart(2,'0')).join('');
+        pixels[y*size+x]=color;if(color)counts.set(color,(counts.get(color)||0)+1);
+      }
+      type.tiles[tile.mask]=pixels;
+    }
+    // the field colour is the most common pixel colour so the layout view resembles the tiles
+    for(const [color,count] of counts)if(count>(counts.get(type.color)||0))type.color=color;
+    project.types.push(type);added.push(type);
+  }
+  return added;
 }

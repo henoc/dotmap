@@ -338,6 +338,23 @@ $('add-type').onclick=()=>{
   change(()=>{const id='type-'+crypto.randomUUID();const type=makeType(id,'マップチップ '+(project.types.length+1),DEFAULT_PALETTE[(project.types.length*3)%DEFAULT_PALETTE.length]);project.types.push(type);selection={typeId:id,mask:0,cell:null};$('used-only').checked=false;});
   toast('新しい種類を追加しました。タイル一覧から描き始められます。');
 };
+$('import-atlas').onclick=()=>$('atlas-file').click();
+$('atlas-file').onchange=async()=>{
+  const file=$('atlas-file').files[0];$('atlas-file').value='';if(!file)return;
+  const url=URL.createObjectURL(file), image=new Image();
+  try {
+    if(file.size>24*1024*1024)throw new Error('ファイルは24MB以下にしてください。');
+    const metadata=readAtlasMetadata(new Uint8Array(await file.arrayBuffer()));
+    image.src=url;await image.decode();
+    const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
+    const context=canvas.getContext('2d');context.drawImage(image,0,0);
+    const rgba=context.getImageData(0,0,canvas.width,canvas.height).data;
+    let added=[];
+    change(()=>{added=importAtlas(project,metadata,rgba,canvas.width,canvas.height);if(added.length)selection={typeId:added[0].id,mask:0,cell:null};$('used-only').checked=false;});
+    toast(added.length?`アトラスから${added.length}種類を追加しました（${added.map(t=>t.name).join('、')}）`:'追加できる種類がありませんでした（上限32種類）。');
+  } catch(error) {toast(error.message||'アトラスPNGを読み込めませんでした。');}
+  finally {URL.revokeObjectURL(url);}
+};
 $('delete-type').onclick=()=>{
   const type=currentType();if(project.types.length===1)return;
   if(!confirm(`「${type.name}」とそのタイルを削除しますか？ 配置済みのマスは空になります。元に戻すことができます。`))return;
