@@ -218,7 +218,10 @@ function renderPalette() {
     const button=document.createElement('button');button.className='swatch';button.dataset.color=value;button.style.background=value;
     button.setAttribute('aria-label',`色 ${value}`);button.title=value.toUpperCase();button.onclick=()=>setColor(value,index);fragment.append(button);
   });
-  $('palette').replaceChildren(fragment);$('palette-count').textContent=project.palette.length+' COLORS';updatePaletteSelection();
+  $('palette').replaceChildren(fragment);
+  const preset=matchPalettePreset(project.palette);
+  $('palette-count').textContent=(preset?preset.name+' · ':'')+project.palette.length+' COLORS';
+  updatePaletteSelection();
 }
 function previewPaletteImport(colors, message) {
   importedPalette=colors;$('palette-import-status').textContent=message||`${colors.length}色を検出（重複除去済み）`;

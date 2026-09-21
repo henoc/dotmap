@@ -15,6 +15,9 @@ function normalizePalette(value) {
 function serializePaletteHex(colors) {
   return colors.join('\n')+'\n';
 }
+function matchPalettePreset(colors) {
+  return PALETTE_PRESETS.find(preset=>preset.colors.length===colors.length&&preset.colors.every((c,i)=>c===colors[i]));
+}
 function parsePaletteText(text) {
   const colors = new Set();
   for (const line of text.split(/\r\n?|\n/)) {
