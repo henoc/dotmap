@@ -9,9 +9,9 @@ let fileTarget={handle:null,name:null}, fileBusy=false, downloadKind='project';
 let project = createProject();
 let selection = { typeId:'grass', mask:255, cell:9 };
 let tool='pen', lastDrawTool='pen', fieldTool='select', color='#628b53', brush=1, zoom=16, previewScale=2;
-let undoStack=[], redoStack=[], gesture=null, toastTimer;
+let undoStack=[], redoStack=[], gesture=null, toastTimer, marquee=null, clipboard=null;
 let tileCards=new Map(), fieldButtons=[];
-let paletteIndex=2, importedPalette=[], paletteReadId=0, exporting=false, pendingStyleChange=null;
+let paletteIndex=2, importedPalette=[], paletteReadId=0, exporting=false, pendingStyleChange=null, snapMode='rgb';
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function currentType() { return project.types.find(t=>t.id===selection.typeId)||project.types[0]; }
 function selectedTile() {
@@ -185,6 +185,8 @@ function renderGraphics() {
   const targets=match?symmetryTargets(match.type,match.mask).size:0;
   $('bake-symmetry').disabled=!targets;
   $('bake-symmetry').textContent=`対称タイルへ焼き込む${targets?`（${targets}枚）`:''}`;
+  if(marquee&&(marquee.x+marquee.w<=0||marquee.y+marquee.h<=0||marquee.x>=project.tileSize||marquee.y>=project.tileSize))marquee=null;
+  updateMarquee();
   $('shared-count').textContent=match?`${counts.get(match.mask)||0} マスがこのタイルを共有`:'このマスにはタイルがありません';
   $('selection-description').textContent=selection.cell!==null?`選択：列 ${selection.cell%project.field.width+1}・行 ${Math.floor(selection.cell/project.field.width)+1} ／ 同じ接続パターンへ一括反映`:'タイル一覧から選択中 ／ 未使用のパターンも編集できます';
   peering($('selected-peering'),currentType().styleBits,match?match.mask:0);
@@ -243,11 +245,135 @@ function setTool(value) {
   finishGesture();
   if(value==='picker'&&tool!=='picker')lastDrawTool=tool;
   tool=value;document.querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.tool===tool));
+  if(value!=='select')canvas.style.cursor='';
 }
 function pointOnCanvas(event) {
   const r=canvas.getBoundingClientRect();return [Math.floor((event.clientX-r.left)/r.width*project.tileSize),Math.floor((event.clientY-r.top)/r.height*project.tileSize)];
 }
 function inside([x,y]) { return x>=0&&y>=0&&x<project.tileSize&&y<project.tileSize; }
+function clampPoint([x,y]) {
+  const s=project.tileSize;return [Math.max(0,Math.min(s-1,x)),Math.max(0,Math.min(s-1,y))];
+}
+function rectFromPoints(a,b) {
+  const x=Math.min(a[0],b[0]), y=Math.min(a[1],b[1]);
+  return {x,y,w:Math.abs(a[0]-b[0])+1,h:Math.abs(a[1]-b[1])+1};
+}
+function updateMarquee() {
+  const el=$('marquee'), rect=gesture?.kind==='marquee'||gesture?.kind==='move'?gesture.rect:marquee;
+  const show=Boolean(rect&&selectedTile());
+  el.hidden=!show;
+  if(!show)return;
+  el.style.left=rect.x*zoom+'px';el.style.top=rect.y*zoom+'px';
+  el.style.width=rect.w*zoom+'px';el.style.height=rect.h*zoom+'px';
+  const pixels=gesture?.kind==='marquee'?null:gesture?.kind==='move'?gesture.data||gesture.pixels:marquee?.pixels;
+  el.style.background=pixels?'transparent':'';
+  let preview=el.querySelector('canvas');
+  if(!pixels){if(preview)preview.remove();return;}
+  if(!preview){preview=document.createElement('canvas');el.append(preview);}
+  if(preview.width!==rect.w||preview.height!==rect.h){preview.width=rect.w;preview.height=rect.h;}
+  paintPixels(preview,pixels,rect.w);
+}
+function hitMarquee(point, rect) {
+  return rect&&point[0]>=rect.x&&point[0]<rect.x+rect.w&&point[1]>=rect.y&&point[1]<rect.y+rect.h;
+}
+function extractRect(pixels, size, rect) {
+  const data=[];
+  for(let y=0;y<rect.h;y++) for(let x=0;x<rect.w;x++) {
+    const tx=rect.x+x, ty=rect.y+y;
+    data.push(tx>=0&&ty>=0&&tx<size&&ty<size?pixels[ty*size+tx]:null);
+  }
+  return data;
+}
+function stampRect(pixels, size, data, x, y, w, h) {
+  for(let py=0;py<h;py++) for(let px=0;px<w;px++) {
+    const tx=x+px, ty=y+py;
+    if(tx>=0&&ty>=0&&tx<size&&ty<size)pixels[ty*size+tx]=data?data[py*w+px]:null;
+  }
+}
+function pngBlob(pixels, w, h) {
+  return new Promise(resolve=>{
+    const target=document.createElement('canvas');target.width=w;target.height=h;
+    paintPixels(target,pixels,w);target.toBlob(resolve,'image/png');
+  });
+}
+function writeOsClipboard(clip) {
+  if(!navigator.clipboard?.write||typeof ClipboardItem==='undefined')return;
+  try {navigator.clipboard.write([new ClipboardItem({'image/png':pngBlob(clip.pixels,clip.w,clip.h)})]).catch(()=>{});}
+  catch {}
+}
+async function clipFromBlob(blob) {
+  const bitmap=await createImageBitmap(blob);
+  const w=bitmap.width, h=bitmap.height;
+  const target=document.createElement('canvas');target.width=w;target.height=h;
+  target.getContext('2d').drawImage(bitmap,0,0);
+  if(bitmap.close)bitmap.close();
+  const rgba=target.getContext('2d').getImageData(0,0,w,h).data, pixels=[];
+  for(let i=0;i<rgba.length;i+=4) pixels.push(rgba[i+3]===0?null:'#'+[rgba[i],rgba[i+1],rgba[i+2]].map(n=>n.toString(16).padStart(2,'0')).join(''));
+  return {w,h,pixels};
+}
+async function readOsClipboard() {
+  if(!navigator.clipboard?.read)return null;
+  try {
+    for(const item of await navigator.clipboard.read()) {
+      const type=item.types.find(t=>t.startsWith('image/'));
+      if(type)return await clipFromBlob(await item.getType(type));
+    }
+  } catch {}
+  return null;
+}
+function copyMarquee(quiet=false) {
+  const match=selectedTile();
+  if(!match||!marquee){if(!quiet)toast('先に範囲を選択してください');return false;}
+  clipboard={w:marquee.w,h:marquee.h,pixels:(marquee.pixels||extractRect(tilePixels(match.type,project.tileSize,match.mask),project.tileSize,marquee)).slice()};
+  writeOsClipboard(clipboard);
+  if(!quiet)toast(`${marquee.w}×${marquee.h} をコピーしました`);
+  return true;
+}
+function cutMarquee() {
+  if(!copyMarquee(true))return;
+  const rect=marquee;
+  change(()=>{const match=selectedTile();if(match)stampRect(editablePixels(match),project.tileSize,null,rect.x,rect.y,rect.w,rect.h);});
+  toast('切り取りました');
+}
+async function pasteMarquee() {
+  const match=selectedTile();
+  if(!match){toast('タイルがありません');return;}
+  const clip=await readOsClipboard()||clipboard;
+  if(!clip){toast('コピーしたものがありません');return;}
+  clipboard=clip;
+  const size=project.tileSize;
+  const x=Math.max(1-clip.w,Math.min(size-1,marquee?marquee.x:0));
+  const y=Math.max(1-clip.h,Math.min(size-1,marquee?marquee.y:0));
+  const ground=tilePixels(match.type,size,match.mask).slice();
+  change(()=>stampRect(editablePixels(match),size,clip.pixels,x,y,clip.w,clip.h));
+  marquee={x,y,w:clip.w,h:clip.h,pixels:clip.pixels.slice(),ground};
+  setTool('select');updateMarquee();
+}
+function eraseMarquee() {
+  const match=selectedTile();if(!match||!marquee)return;
+  const rect=marquee;
+  change(()=>stampRect(editablePixels(match),project.tileSize,null,rect.x,rect.y,rect.w,rect.h));
+}
+function applyMove(g, point) {
+  const size=project.tileSize;
+  const x=Math.max(1-g.w,Math.min(size-1,point[0]-g.grab[0]));
+  const y=Math.max(1-g.h,Math.min(size-1,point[1]-g.grab[1]));
+  if(!g.moved) {
+    if(x===g.origin.x&&y===g.origin.y){g.rect={x,y,w:g.w,h:g.h,pixels:g.pixels,ground:g.ground};updateMarquee();return;}
+    g.moved=true;g.before=snapshot();
+    const pixels=editablePixels(g.match);
+    if(g.ground) g.data=g.pixels.slice();
+    else {g.base=pixels.slice();g.data=(g.pixels||extractRect(g.base,size,{x:g.origin.x,y:g.origin.y,w:g.w,h:g.h})).slice();}
+  }
+  const pixels=editablePixels(g.match);
+  if(g.ground) for(let i=0;i<pixels.length;i++)pixels[i]=g.ground[i];
+  else {
+    for(let i=0;i<pixels.length;i++)pixels[i]=g.base[i];
+    stampRect(pixels,size,null,g.origin.x,g.origin.y,g.w,g.h);
+  }
+  stampRect(pixels,size,g.data,x,y,g.w,g.h);
+  g.rect=marquee={x,y,w:g.w,h:g.h,pixels:g.data,ground:g.ground};renderGraphics();
+}
 function editablePixels(match) {
   return materializeTile(match.type,project.tileSize,match.mask);
 }
@@ -255,6 +381,15 @@ function finishGesture(event) {
   if(!gesture||(event&&event.pointerId!==gesture.pointerId))return;
   const completed=gesture;gesture=null;
   if(completed.element.hasPointerCapture(completed.pointerId))completed.element.releasePointerCapture(completed.pointerId);
+  if(completed.kind==='marquee'){
+    const dragged=completed.rect.w>1||completed.rect.h>1;
+    marquee=dragged?completed.rect:completed.prior?null:completed.rect;
+    canvas.style.cursor='';updateMarquee();return;
+  }
+  if(completed.kind==='move') {
+    marquee=completed.rect;canvas.style.cursor=tool==='select'?'move':'';updateMarquee();
+    if(!completed.moved)return;
+  }
   commit(completed.before,completed.kind==='field');
 }
 canvas.addEventListener('pointerdown',event=>{
@@ -265,6 +400,15 @@ canvas.addEventListener('pointerdown',event=>{
     if(value){setColor(value);if(tool==='picker')setTool(lastDrawTool);}
     else toast('ここは透明です');
     return;
+  }
+  if(tool==='select') {
+    canvas.setPointerCapture(event.pointerId);
+    if(hitMarquee(point,marquee)) {
+      gesture={kind:'move',pointerId:event.pointerId,element:canvas,match,grab:[point[0]-marquee.x,point[1]-marquee.y],origin:{x:marquee.x,y:marquee.y},w:marquee.w,h:marquee.h,pixels:marquee.pixels,ground:marquee.ground,rect:{x:marquee.x,y:marquee.y,w:marquee.w,h:marquee.h,pixels:marquee.pixels},moved:false};
+      canvas.style.cursor='grabbing';return;
+    }
+    gesture={kind:'marquee',pointerId:event.pointerId,element:canvas,start:point,rect:rectFromPoints(point,point),prior:marquee&&{...marquee}};
+    updateMarquee();return;
   }
   const before=snapshot();
   if(tool==='fill') {
@@ -283,7 +427,12 @@ canvas.addEventListener('pointerdown',event=>{
 });
 canvas.addEventListener('pointermove',event=>{
   const point=pointOnCanvas(event),valid=inside(point);$('coordinates').textContent=valid?`X: ${point[0]}　Y: ${point[1]}`:'X: —　Y: —';
+  canvas.style.cursor=gesture?.kind==='move'?'grabbing':tool==='select'&&valid&&hitMarquee(point,marquee)?'move':'';
   if(!gesture||gesture.pointerId!==event.pointerId)return;
+  if(gesture.kind==='marquee') {
+    gesture.rect=rectFromPoints(gesture.start,clampPoint(point));updateMarquee();return;
+  }
+  if(gesture.kind==='move') {applyMove(gesture,point);return;}
   if(gesture.kind==='line') {
     const size=project.tileSize, end=valid?point:[Math.max(0,Math.min(size-1,point[0])),Math.max(0,Math.min(size-1,point[1]))];
     const pixels=editablePixels(gesture.match);
@@ -486,8 +635,28 @@ $('palette-form').onsubmit=event=>{
 };
 $('palette-snap').onclick=()=>{
   if(!project.palette.length)return;
+  finishGesture();
+  const type=currentType(), match=selectedTile(), size=project.tileSize;
+  for(const mode of ['rgb','lab','luma']) {
+    const preview=clone(type);
+    snapTypeToPalette(preview,project.palette,mode);
+    const canvas=$(`snap-preview-${mode}`);
+    canvas.width=canvas.height=size;
+    paintPixels(canvas,match?tilePixels(preview,size,match.mask):[],size);
+  }
+  document.querySelectorAll('#snap-choices [data-snap]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.snap===snapMode));
+  $('snap-dialog').showModal();
+};
+document.querySelectorAll('#snap-choices [data-snap]').forEach(b=>b.onclick=()=>{
+  snapMode=b.dataset.snap;
+  document.querySelectorAll('#snap-choices [data-snap]').forEach(x=>x.setAttribute('aria-pressed',x.dataset.snap===snapMode));
+});
+$('snap-cancel').onclick=()=>$('snap-dialog').close();
+$('snap-form').onsubmit=event=>{
+  event.preventDefault();
   const type=currentType();
-  change(()=>snapTypeToPalette(type,project.palette));
+  change(()=>snapTypeToPalette(type,project.palette,snapMode));
+  $('snap-dialog').close();
   toast(`「${type.name}」の色をパレットに寄せました`);
 };
 async function savePalette(downloadName=null) {
@@ -571,9 +740,18 @@ document.addEventListener('keydown',event=>{
   if(fileBusy)return;
   if(event.target.matches('input,select,textarea')||event.isComposing||document.querySelector('dialog[open]'))return;
   const key=event.key.toLowerCase();
-  if(event.metaKey||event.ctrlKey){if(key==='z'){event.preventDefault();history(event.shiftKey?'redo':'undo');}else if(key==='y'){event.preventDefault();history('redo');}return;}
+  if(event.metaKey||event.ctrlKey){
+    if(key==='z'){event.preventDefault();history(event.shiftKey?'redo':'undo');}
+    else if(key==='y'){event.preventDefault();history('redo');}
+    else if(key==='c'){event.preventDefault();if(!event.repeat)copyMarquee();}
+    else if(key==='x'){event.preventDefault();if(!event.repeat)cutMarquee();}
+    else if(key==='v'){event.preventDefault();if(!event.repeat)pasteMarquee();}
+    return;
+  }
   if(gesture)return;
-  const shortcut={b:'pen',l:'line',e:'eraser',g:'fill',i:'picker'}[key];if(!event.altKey&&shortcut){event.preventDefault();setTool(shortcut);}
+  if(key==='escape'){event.preventDefault();marquee=null;canvas.style.cursor='';updateMarquee();return;}
+  if((key==='delete'||key==='backspace')&&marquee){event.preventDefault();eraseMarquee();return;}
+  const shortcut={b:'pen',l:'line',e:'eraser',g:'fill',i:'picker',m:'select'}[key];if(!event.altKey&&shortcut){event.preventDefault();setTool(shortcut);}
 });
 let loadWarning='';
 try {const data=localStorage.getItem(storageKey);if(data){project=validateProject(JSON.parse(data));selection={typeId:project.types[0].id,mask:0,cell:null};}}

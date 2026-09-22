@@ -44,20 +44,44 @@ function mergePalette(existing, incoming, mode) {
   for(const color of incoming)if(!seen.has(color)){result.push(color);seen.add(color);}
   return result;
 }
-function nearestPaletteColor(hex, palette) {
-  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+function nearestBy(hex, palette, distance) {
   let best=palette[0], bestDist=Infinity;
   for(const color of palette) {
-    const dr=r-parseInt(color.slice(1,3),16), dg=g-parseInt(color.slice(3,5),16), db=b-parseInt(color.slice(5,7),16);
-    const dist=dr*dr+dg*dg+db*db;
+    const dist=distance(hex,color);
     if(dist<bestDist){bestDist=dist;best=color;}
   }
   return best;
 }
-function snapTypeToPalette(type, palette) {
-  type.color=nearestPaletteColor(type.color,palette);
+function rgbDistance(a, b) {
+  const dr=parseInt(a.slice(1,3),16)-parseInt(b.slice(1,3),16);
+  const dg=parseInt(a.slice(3,5),16)-parseInt(b.slice(3,5),16);
+  const db=parseInt(a.slice(5,7),16)-parseInt(b.slice(5,7),16);
+  return dr*dr+dg*dg+db*db;
+}
+function nearestPaletteColor(hex, palette) { return nearestBy(hex,palette,rgbDistance); }
+function rgbToLab(hex) {
+  const lin=c=>{c/=255;return c<=0.04045?c/12.92:((c+0.055)/1.055)**2.4;};
+  const r=lin(parseInt(hex.slice(1,3),16)), g=lin(parseInt(hex.slice(3,5),16)), b=lin(parseInt(hex.slice(5,7),16));
+  const f=t=>t>0.008856?Math.cbrt(t):7.787*t+16/116;
+  const fy=f(0.2126729*r+0.7151522*g+0.0721750*b);
+  return [116*fy-16, 500*(f((0.4124564*r+0.3575761*g+0.1804375*b)/0.95047)-fy), 200*(fy-f((0.0193339*r+0.1191920*g+0.9503041*b)/1.08883))];
+}
+function labDistance(a, b) {
+  const A=rgbToLab(a), B=rgbToLab(b), dl=A[0]-B[0], da=A[1]-B[1], db=A[2]-B[2];
+  return dl*dl+da*da+db*db;
+}
+function nearestLabColor(hex, palette) { return nearestBy(hex,palette,labDistance); }
+function lumaDistance(a, b) {
+  const d=rgbToLab(a)[0]-rgbToLab(b)[0];
+  return d*d;
+}
+function nearestLumaColor(hex, palette) { return nearestBy(hex,palette,lumaDistance); }
+function snapTypeToPalette(type, palette, mode='rgb') {
+  if(!palette.length)return;
+  const mapColor=mode==='lab'?hex=>nearestLabColor(hex,palette):mode==='luma'?hex=>nearestLumaColor(hex,palette):hex=>nearestPaletteColor(hex,palette);
+  type.color=mapColor(type.color);
   for(const pixels of Object.values(type.tiles)) {
-    for(let i=0;i<pixels.length;i++)if(pixels[i]!==null)pixels[i]=nearestPaletteColor(pixels[i],palette);
+    for(let i=0;i<pixels.length;i++)if(pixels[i]!==null)pixels[i]=mapColor(pixels[i]);
   }
 }
 
