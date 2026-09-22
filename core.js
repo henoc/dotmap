@@ -170,6 +170,15 @@ function symmetryTransforms(type) {
   }
   return symmetryTransformCache.get(bits);
 }
+const CENTER_TRANSFORM={id:'center',label:'中央タイル',matrix:[1,0,0,1]};
+function centerSourceMask(type) {
+  if(!type.centerFill)return null;
+  const valid=new Set(patterns(type.styleBits));
+  for(const mask of [type.styleBits, type.styleBits&85]) {
+    if(mask&&valid.has(mask)&&Object.hasOwn(type.tiles,mask))return mask;
+  }
+  return null;
+}
 function derivedTile(type, mask) {
   if(Object.hasOwn(type.tiles,mask))return null;
   for(const transform of symmetryTransforms(type)) {
@@ -178,6 +187,8 @@ function derivedTile(type, mask) {
     const sourceMask=transformMask(mask,{matrix:[a,c,b,d]});
     if(Object.hasOwn(type.tiles,sourceMask))return {sourceMask,transform};
   }
+  const source=centerSourceMask(type);
+  if(source!=null&&source!==mask)return {sourceMask:source,transform:CENTER_TRANSFORM};
   return null;
 }
 function materializeTile(type, size, mask) {
@@ -232,7 +243,7 @@ function resolveCell(project, index) {
   return { type, mask: patternMask(type.styleBits,raw), raw };
 }
 function makeType(id, name, color, seed = false) {
-  return { id, name, color, seed, styleBits:255, symmetry:0, tiles:{} };
+  return { id, name, color, seed, styleBits:255, symmetry:7, centerFill:true, tiles:{} };
 }
 function createProject(tileSize = 16) {
   const rows = ['11111111','11122211','11222211','11221111','11331111','13311111','33311111','11111111'];
@@ -287,6 +298,8 @@ function validateProject(value) {
     const type=makeType(t.id,t.name,t.color,t.seed);type.styleBits=t.styleBits;
     if(t.symmetry!==undefined&&(!Number.isInteger(t.symmetry)||t.symmetry<0||t.symmetry>7))fail();
     type.symmetry=t.symmetry===undefined?0:t.symmetry;
+    if(t.centerFill!==undefined&&t.centerFill!==true&&t.centerFill!==false)fail();
+    type.centerFill=t.centerFill===true;
     const bank=t.tiles, valid=patterns(type.styleBits);
     if(typeof bank!=='object'||Array.isArray(bank))fail();
     for(const [key,pixels] of Object.entries(bank)) {

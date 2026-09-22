@@ -116,6 +116,7 @@ function renderTypes() {
     input.disabled=!(supported&bit);input.checked=!input.disabled&&Boolean(currentType().symmetry&bit);
     input.closest('label').title=input.disabled?'この接続スタイルでは使えません。':bit===4?'90°・180°・270°の回転を許可します。':'左右・上下を両方許可すると180°反転も使います。';
   });
+  $('center-fill').checked=Boolean(currentType().centerFill);
   $('delete-type').disabled=project.types.length===1;$('add-type').disabled=project.types.length>=32;
 }
 function renderTileList() {
@@ -573,6 +574,7 @@ document.querySelectorAll('[data-symmetry]').forEach(input=>input.onchange=()=>{
   const bit=Number(input.dataset.symmetry),checked=input.checked;
   change(()=>{const type=currentType();type.symmetry=checked?type.symmetry|bit:type.symmetry&~bit;});
 });
+$('center-fill').onchange=()=>{const checked=$('center-fill').checked;change(()=>{currentType().centerFill=checked;});};
 $('bake-symmetry').onclick=()=>{
   const match=selectedTile();if(!match)return;
   let count=0;change(()=>{count=bakeSymmetricTiles(match.type,project.tileSize,match.mask);});
@@ -679,6 +681,10 @@ document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>setTool(b.data
 document.querySelectorAll('[data-field-tool]').forEach(b=>b.onclick=()=>setFieldTool(b.dataset.fieldTool));
 document.querySelectorAll('[data-size]').forEach(b=>b.onclick=()=>{finishGesture();brush=Number(b.dataset.size);$('brush-label').textContent=brush+' px';document.querySelectorAll('[data-size]').forEach(el=>el.setAttribute('aria-pressed',el===b));});
 document.querySelectorAll('[data-preview]').forEach(b=>b.onclick=()=>{previewScale=Number(b.dataset.preview);document.querySelectorAll('[data-preview]').forEach(el=>el.setAttribute('aria-pressed',el===b));renderGraphics();});
+document.querySelectorAll('[data-preview-bg]').forEach(b=>b.onclick=()=>{
+  $('map-preview-wrap').className='map-preview '+(b.dataset.previewBg==='dark'?'checker-dark':b.dataset.previewBg==='gray'?'gray':'checker');
+  document.querySelectorAll('[data-preview-bg]').forEach(el=>el.setAttribute('aria-pressed',el===b));
+});
 function refreshFileControls() {
   for(const id of ['new-project','open-project','save-project','save-project-as'])$(id).disabled=fileBusy;
   document.querySelector('main').inert=fileBusy;
@@ -743,9 +749,13 @@ document.addEventListener('keydown',event=>{
   if(event.metaKey||event.ctrlKey){
     if(key==='z'){event.preventDefault();history(event.shiftKey?'redo':'undo');}
     else if(key==='y'){event.preventDefault();history('redo');}
-    else if(key==='c'){event.preventDefault();if(!event.repeat)copyMarquee();}
-    else if(key==='x'){event.preventDefault();if(!event.repeat)cutMarquee();}
+    else if(key==='c'){if(!marquee)return;event.preventDefault();if(!event.repeat)copyMarquee();}
+    else if(key==='x'){if(!marquee)return;event.preventDefault();if(!event.repeat)cutMarquee();}
     else if(key==='v'){event.preventDefault();if(!event.repeat)pasteMarquee();}
+    else if(key==='a'){
+      event.preventDefault();
+      if(!event.repeat&&selectedTile()){setTool('select');const s=project.tileSize;marquee={x:0,y:0,w:s,h:s};updateMarquee();}
+    }
     return;
   }
   if(gesture)return;

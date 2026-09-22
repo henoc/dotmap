@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import { deflateSync } from 'node:zlib';
 
 const core = readFileSync(new URL('./core.js', import.meta.url), 'utf8');
-const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles})', {TextEncoder, TextDecoder});
+const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM})', {TextEncoder, TextDecoder});
 const pixels = Array(64).fill(null);
 drawLine(pixels, 8, [0,0], [7,7], '#123456');
 assert.equal(pixels.filter(Boolean).length, 8, 'Fast diagonal strokes must be continuous');
@@ -70,6 +70,7 @@ assert.equal(resolveCell(project,2).mask,0,'Different types are disconnected');
 project.field={width:4,height:4,cells:Array(16).fill('grass')};
 assert.equal(resolveCell(project,5).mask,resolveCell(project,10).mask);
 const type=project.types[0], mask=resolveCell(project,5).mask;
+type.symmetry=0;type.centerFill=false;
 const shared=tilePixels(type,16,mask).slice();shared[0]='#abcdef';type.tiles[mask]=shared;
 assert.equal(tilePixels(resolveCell(project,10).type,16,resolveCell(project,10).mask)[0],'#abcdef');
 const untouched=tilePixels(type,16,0)[0];assert.notEqual(untouched,'#abcdef');
@@ -352,4 +353,56 @@ for(const invalid of [-1,8,1.5,'7',null,true]) {
   assert.throws(()=>validateProject(data));
 }
 console.log('Symmetry checks passed: D4 bit/pixel orientation, all custom styles, allowed groups, derivation, copy-on-write, baking, deterministic sources and JSON validation.');
+}
+{
+const fill=Array(64).fill('#ff00aa'), plus=Array(64).fill('#00aa88'), edge=Array(64).fill('#112233');
+const type=makeType('fill','中央','#123456');
+assert.equal(type.symmetry,7);
+assert.equal(type.centerFill,true);
+assert.equal(centerSourceMask(type),null);
+type.tiles={255:fill.slice()};
+assert.equal(centerSourceMask(type),255);
+assert.equal(derivedTile(type,255),null);
+assert.equal(derivedTile(type,0).sourceMask,255);
+assert.equal(derivedTile(type,0).transform.id,'center');
+same(tilePixels(type,8,0),fill);
+assert.deepEqual(Object.keys(type.tiles),['255'],'Center fill must not materialize other tiles');
+type.tiles={85:plus.slice()};
+assert.equal(centerSourceMask(type),85);
+same(tilePixels(type,8,0),plus);
+same(tilePixels(type,8,255),plus);
+type.tiles={85:plus.slice(),255:fill.slice()};
+assert.equal(centerSourceMask(type),255,'Full-surround tile beats the four-side tile');
+same(tilePixels(type,8,0),fill);
+type.tiles={255:fill.slice(),0:edge.slice()};
+same(tilePixels(type,8,0),edge,'A saved tile is not replaced by center fill');
+type.symmetry=4;type.tiles={1:edge.slice(),255:fill.slice()};
+assert.equal(derivedTile(type,4).transform.id,'rotate90','Symmetry derivation beats center fill');
+type.symmetry=0;
+const copy=materializeTile(type,8,0);
+assert.equal(derivedTile(type,0),null);
+copy[0]='#ffffff';
+type.tiles[255][0]='#000000';
+assert.equal(copy[0],'#ffffff','Editing a centered derivation leaves an independent copy');
+const sides=makeType('sides','辺','#123456');
+sides.styleBits=85;sides.centerFill=true;sides.tiles={85:plus.slice()};
+assert.equal(centerSourceMask(sides),85);
+same(tilePixels(sides,8,0),plus);
+const corners=makeType('corners','角','#123456');
+corners.styleBits=170;corners.centerFill=true;corners.tiles={170:fill.slice()};
+assert.equal(centerSourceMask(corners),170);
+same(tilePixels(corners,8,0),fill);
+const project=createProject(8);project.types=[type];project.field.cells.fill('fill');
+type.centerFill=true;type.tiles={255:fill.slice()};
+const restored=validateProject(JSON.parse(JSON.stringify(project)));
+assert.equal(restored.types[0].centerFill,true);
+same(tilePixels(restored.types[0],8,0),fill);
+assert.equal(Object.hasOwn(atlasLayout(project).metadata.types[0],'centerFill'),false);
+const legacy=JSON.parse(JSON.stringify(project));delete legacy.types[0].centerFill;
+assert.equal(validateProject(legacy).types[0].centerFill,false);
+for(const invalid of [1,0,'true',null]) {
+  const data=JSON.parse(JSON.stringify(project));data.types[0].centerFill=invalid;
+  assert.throws(()=>validateProject(data));
+}
+console.log('Center-fill checks passed: source priority, symmetry/saved override, copy-on-write, other styles and JSON.');
 }
