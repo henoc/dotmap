@@ -1,21 +1,246 @@
 <!doctype html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#f6f7f3">
-<title>DOT — マップチップスタジオ</title>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#f6f0e4">
+<title>DOT</title>
 <style>
-:root{font-family:Inter,"Helvetica Neue",Arial,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif;color:#283b34;background:#f6f7f3;font-synthesis:none;--green:#355c46;--muted:#7e8a7e;--line:#e0e5db;--soft:#edf2e9}
-*{box-sizing:border-box}body{margin:0}button,input,select{font:inherit;color:inherit}button,select,input[type=color]{cursor:pointer}button{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);border-radius:7px;background:white;padding:8px 11px;font-size:11px}button:hover{background:var(--soft)}button:disabled{opacity:.35;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #94b98b;outline-offset:2px}button[aria-pressed=true]{background:#e8f0e1;border-color:#9aae8f;color:#355c46}.primary{background:var(--green);color:white;border-color:var(--green)}.primary:hover{background:#284732}svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}.icon{width:32px;height:32px;padding:7px}.muted{color:var(--muted)}input:not([type=color]),select{border:1px solid var(--line);border-radius:6px;background:#fbfcf8;padding:8px;min-width:0;font-size:11px}select{width:100%}input[type=number]{width:55px}input[type=color]{border:0;background:none;width:36px;height:36px;padding:0;flex-shrink:0}input[type=color]::-webkit-color-swatch-wrapper{padding:0}input[type=color]::-webkit-color-swatch{border:0;border-radius:6px}
-header{min-height:76px;padding:18px 28px;display:flex;align-items:center;justify-content:space-between;gap:18px;border-bottom:1px solid var(--line);background:#fcfdf9}.brand{display:flex;align-items:center;gap:10px;white-space:nowrap}.brand-mark{display:grid;grid-template-columns:repeat(3,6px);gap:3px;transform:rotate(-5deg)}.brand-mark i{width:6px;height:6px;background:#53724a}.brand-mark i:nth-child(3n){background:#afc59e}.wordmark{font-size:25px;font-weight:800;letter-spacing:3px}.brand small{border-left:1px solid var(--line);margin-left:10px;padding-left:18px;font-size:9px;letter-spacing:2px;color:#819175}.header-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.saved{font-size:10px;color:#788a6b;margin-right:10px}.saved:before{content:'●';font-size:7px;margin-right:6px}main{max-width:1640px;margin:auto;padding:22px 28px}.intro{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;gap:12px}.eyebrow{font-size:9px;letter-spacing:2px;color:#7b9277;margin-bottom:8px;font-weight:600}h1{font-size:19px;font-weight:600;margin:0}.intro p{font-size:11px;color:#899381;margin:7px 0 0}.project-title{display:flex;align-items:center;gap:10px;font-size:10px;color:#7e8e71}#filename{width:170px;background:white}.workspace{display:grid;grid-template-columns:206px minmax(320px,1fr) 310px;gap:18px;align-items:start}.panel{background:white;border:1px solid var(--line);border-radius:10px;overflow:hidden;min-width:0}.section{padding:17px 15px;border-bottom:1px solid var(--line)}.section:last-child{border-bottom:0}.section-title{display:flex;justify-content:space-between;align-items:center;margin:0 0 13px;font-size:11px;font-weight:600;gap:10px}.section-title span{font-size:9px;letter-spacing:1px;color:#93a087;font-weight:400}.hint{color:#87927d;font-size:10px;line-height:1.8;margin:11px 0 0}.type-list{display:grid;gap:6px;margin-bottom:12px}.type-button{justify-content:flex-start;padding:9px;text-align:left;min-width:0}.type-button .type-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.type-button small{font-size:9px;color:#839076}.type-dot{width:14px;height:14px;border-radius:4px;flex-shrink:0}.type-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}.type-actions button:not(.icon){grid-column:1;min-width:0}.type-actions .icon{grid-column:2;grid-row:1/span 2;height:auto}.form-row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:10px;margin:12px 0;color:#728366}.form-row input:not([type=color]){width:100%}.style-label{display:block;font-size:10px;margin:12px 0 7px;color:#78876e}#terrain-style{font-size:10px;padding:8px 5px}.tools{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.tool{height:42px;padding:9px 5px;background:#f7f9f4;border-color:transparent}.tool span{display:none}.size-line{display:flex;justify-content:space-between;font-size:10px;margin:14px 0 8px}.size-options{display:flex;gap:6px}.size-options button{flex:1;padding:5px;font-size:10px}.color-current{display:flex;align-items:center;gap:9px;margin-bottom:14px}#hex{width:100%;font-family:monospace;font-size:12px}.swatches{display:grid;grid-template-columns:repeat(5,1fr);gap:7px}.swatch{aspect-ratio:1;padding:0;border:1px solid #0000000b;border-radius:5px}.swatch[aria-pressed=true]{outline:2px solid #59764c;outline-offset:2px}.keys{font-size:9px;color:#8a9480;line-height:2}.keys kbd{font:inherit;color:#596e4e;background:#f1f4ed;border-radius:3px;padding:2px 4px}
-.editor{min-width:0}.editor-top{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 15px;border-bottom:1px solid var(--line);min-height:58px}.tile-heading{font-size:12px;min-width:0}.tile-heading strong{font-weight:600;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:250px}.tile-heading small{font-size:9px;color:#8b9780;display:block;margin-top:5px}.editor-controls{display:flex;gap:4px;align-items:center}.editor-controls button{border-color:transparent}.separator{height:18px;width:1px;background:var(--line);margin:0 4px}.stage{height:382px;overflow:auto;display:flex;padding:28px;background:#edf0e9;background-image:radial-gradient(#b3bca750 .7px,transparent .7px);background-size:12px 12px;overscroll-behavior:contain}.canvas-wrap{position:relative;flex-shrink:0;margin:auto;line-height:0;box-shadow:0 5px 20px #3c4b3210}.checker{background-color:white;background-image:conic-gradient(#edf0e8 25%,transparent 0 50%,#edf0e8 0 75%,transparent 0);background-size:16px 16px}canvas{image-rendering:pixelated}#canvas{display:block;touch-action:none;cursor:crosshair}.canvas-wrap.inactive{opacity:.3;pointer-events:none}.grid-overlay{position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(to right,#52614b22 1px,transparent 1px),linear-gradient(to bottom,#52614b22 1px,transparent 1px)}#marquee{position:absolute;pointer-events:none;border:1px dashed #355c46;background:#628b5328;z-index:1}#marquee[hidden]{display:none}.editor-bottom{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 14px;font-size:10px;color:#89957e;border-top:1px solid var(--line)}.zoom{display:flex;align-items:center;gap:4px}.zoom button{border:0;padding:3px;width:23px;height:23px}.zoom output{min-width:38px;text-align:center}.selection-info{display:flex;gap:12px;padding:13px 15px;border-top:1px solid var(--line);align-items:center;min-height:70px}.peering{display:grid;grid-template-columns:repeat(3,10px);grid-template-rows:repeat(3,10px);gap:2px;flex-shrink:0}.peering i{background:#e9ede3;border-radius:2px}.peering i.on{background:#789563}.peering i.off{background:#f6f7f3;border:1px dashed #d8dfcf}.selection-info p{font-size:10px;line-height:1.8;margin:0;color:#849175}.selection-info strong{font-size:11px;color:#5c7351;font-weight:500}.tile-panel{margin-top:16px}.tile-panel .section-title{padding:16px 15px 0;margin-bottom:12px}.tile-filter{padding:0 15px 12px;display:flex;justify-content:space-between;align-items:center;gap:10px;color:#89967d;font-size:10px}.tile-filter label{display:flex;gap:5px;align-items:center}.tile-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:7px;padding:0 15px 15px;max-height:260px;overflow:auto}.tile-card{position:relative;flex-direction:column;gap:5px;padding:7px 4px 5px;background:#fbfcf8}.tile-card canvas{width:36px;height:36px}.tile-card small{font-size:9px;color:#7a876e;font-variant-numeric:tabular-nums}.tile-card .usage{position:absolute;top:3px;right:4px;font-size:8px;color:#657f57}.tile-card .peering{position:absolute;left:4px;top:5px;transform:scale(.34);transform-origin:top left}.tile-card.edited:after{content:'';position:absolute;right:5px;bottom:6px;width:4px;height:4px;background:#789563;border-radius:50%}.tile-footnote{padding:0 15px 12px;font-size:9px;color:#8d987f}
-.right-column{display:grid;gap:16px;min-width:0}.field-toolbar{display:flex;gap:6px;margin-bottom:12px}.field-toolbar button{flex:1;padding:7px 5px}.field-scroll{overflow:auto;max-height:320px}.field-grid{display:grid;gap:2px;width:max-content;margin:auto;padding:3px;touch-action:none}.field-cell{padding:0;border:0;border-radius:3px;width:29px;height:29px;font-size:10px;position:relative;color:#fff;text-shadow:0 1px 2px #0005}.field-cell.empty{color:#9ba58f;text-shadow:none;background:#edf0e8}.field-cell[aria-pressed=true]{outline:2px solid #314e3d;outline-offset:1px;z-index:1;box-shadow:inset 0 0 0 2px #fff}.field-cell.related:after{content:'';position:absolute;bottom:3px;right:3px;width:4px;height:4px;border-radius:50%;background:#fff}.field-size{display:flex;align-items:center;gap:6px;margin-top:13px;font-size:10px;color:#849376}.field-size input{width:46px;padding:6px}.field-size button{margin-left:auto;padding:6px 8px}.map-preview{overflow:auto;max-height:330px;border-radius:6px;padding:10px;display:flex;background-color:#f2f4ed}.map-preview.checker-dark{background-color:#2b2b2b;background-image:conic-gradient(#3d3d3d 25%,transparent 0 50%,#3d3d3d 0 75%,transparent 0);background-size:16px 16px}.map-preview.gray{background:#808080;background-image:none}.map-preview canvas{margin:auto;display:block;flex-shrink:0;cursor:pointer}.preview-bar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:10px;color:#86957b;margin-top:10px}.preview-scale{display:flex;gap:4px}.preview-scale button{padding:4px 7px;font-size:9px}.export-controls{display:grid;grid-template-columns:1fr 70px;gap:8px;margin-bottom:11px}#export{width:100%}.empty-message{font-size:11px;color:#8d967f;padding:12px}.rules{margin-top:16px;color:#849275;font-size:10px;line-height:1.8}.rules summary{cursor:pointer}.rules p{margin:7px 0}.footer{display:flex;justify-content:space-between;gap:15px;font-size:10px;color:#9aa68c;border-top:1px solid var(--line);padding-top:15px;margin-top:24px}#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);max-width:90vw;width:max-content;padding:12px 20px;border-radius:9px;background:#2f493b;color:white;box-shadow:0 4px 20px #0002;font-size:12px;z-index:10}#toast:empty{display:none}dialog{border:1px solid var(--line);border-radius:12px;padding:24px;width:340px;color:#3a4d35}dialog::backdrop{background:#17271950}dialog h2{font-size:17px;margin:0 0 20px}dialog label{display:grid;gap:8px;font-size:12px;margin:14px 0}dialog .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:22px}
-@media(min-width:1450px){.workspace{grid-template-columns:225px minmax(400px,1fr) 340px}.stage{height:430px}.field-cell{width:32px;height:32px}}
-@media(max-width:1120px){header,main{padding-left:18px;padding-right:18px}.brand small,.saved{display:none}.workspace{grid-template-columns:184px minmax(300px,1fr) 280px;gap:12px}.section{padding:15px 12px}.field-cell{width:26px;height:26px}.editor-top{padding:12px 10px}.tile-heading strong{max-width:150px}.stage{height:340px}.editor-controls{gap:0}.icon{width:29px}}
-@media(max-width:900px){.workspace{grid-template-columns:190px minmax(0,1fr)}.right-column{grid-column:1/-1;grid-template-columns:1fr 1fr}.right-column .panel:last-child{grid-column:1/-1}.project-title{display:none}.right-column .export-controls{grid-template-columns:1fr 120px}.right-column #export{width:auto}.field-cell{width:30px;height:30px}}
-@media(max-width:580px){header{padding:14px 12px;align-items:flex-start;gap:10px}.wordmark{font-size:22px}.brand-mark{display:none}.header-actions{gap:5px;justify-content:flex-end}.header-actions button{font-size:10px;padding:6px 7px}.header-actions svg{display:none}main{padding:20px 12px}.intro h1{font-size:18px}.intro p{font-size:10px}.workspace{grid-template-columns:1fr}.left-column{display:grid;grid-template-columns:1fr 1fr}.left-column .section:first-child{grid-row:span 2;border-right:1px solid var(--line)}.left-column .section{padding:14px 11px}.left-column .keys{display:none}.tools{gap:3px}.swatches{gap:6px}.left-column .hint{font-size:9px}.section-title span{display:none}.right-column{grid-column:auto;grid-template-columns:1fr}.right-column .panel:last-child{grid-column:auto}.stage{height:340px;padding:20px}.tile-list{max-height:240px}.field-cell{width:31px;height:31px}.tile-heading strong{max-width:180px}.footer{font-size:9px}.intro{margin-bottom:16px}.color-current{gap:6px}input[type=color]{width:30px;height:30px}.editor-top{flex-wrap:wrap}.saved{display:none}.right-column #export{width:100%}}
-.swatches{max-height:230px;overflow:auto;padding:3px}.palette-actions{display:flex;gap:6px;margin-top:11px}.palette-actions button{flex:1;padding:6px 4px}#palette-snap{width:100%;margin-top:7px;font-size:10px}#palette-dialog,#snap-dialog{width:440px;max-width:calc(100vw - 24px)}#palette-text{width:100%;min-height:132px;resize:vertical;border:1px solid var(--line);border-radius:6px;padding:10px;font:12px monospace;color:inherit;background:#fbfcf8}#palette-file{width:100%}#palette-import-status{min-height:2em;overflow-wrap:anywhere}#palette-import-preview{display:flex;flex-wrap:wrap;gap:4px;margin-top:10px}#palette-import-preview span{width:19px;height:19px;border:1px solid #0001;border-radius:4px}.snap-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0 0}.snap-choices button{flex-direction:column;height:auto;padding:10px 8px;gap:8px;font-size:11px}.snap-choices canvas{width:100%;aspect-ratio:1;display:block}.snap-choices small{font-size:9px;color:#8a9480;font-weight:400;line-height:1.4}
-.style-presets{display:flex;gap:5px;margin:8px 0 12px}.style-presets button{flex:1;padding:6px 3px;font-size:10px}.direction-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;max-width:150px;margin:auto}.direction-grid label{display:flex;align-items:center;justify-content:center;gap:3px;min-height:34px;border:1px solid var(--line);border-radius:6px;cursor:pointer;color:#87977b;background:#fafbf8}.direction-grid label:has(:checked){background:#e8f0e1;border-color:#9aae8f;color:#355c46}.direction-grid input{accent-color:var(--green);width:12px;height:12px;margin:0}.direction-center{display:grid;place-items:center;font-size:13px;color:#789563}.export-description{margin:0 0 13px}#style-description{overflow-wrap:anywhere}
-.symmetry-options{display:flex;flex-wrap:wrap;gap:8px 12px;font-size:10px;color:#728366}.symmetry-options label{display:flex;gap:4px;align-items:center}.symmetry-options label:has(:disabled){opacity:.45}.symmetry-options input{margin:0;accent-color:var(--green)}.symmetry-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:10px 15px;border-top:1px solid var(--line)}#tile-origin{font-size:10px;color:#849175}#tile-origin.derived{color:#487c91}#bake-symmetry{font-size:10px}.tile-card.derived{border-style:dashed}.derived-badge{position:absolute;bottom:4px;right:3px;font-size:8px;line-height:1.3;color:#34687d;background:#e6f1f5;border-radius:3px;padding:1px 2px}.derived-badge[hidden]{display:none}
+:root{
+  --paper:#f6f0e4;--desk:#e3d5bf;--ink:#1b140e;--muted:#6d5f52;--red:#c5362b;--line:#1b140e;
+  --mincho:"YuMincho","Yu Mincho","Hiragino Mincho ProN","Hiragino Mincho Pro",serif;
+  font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN",Meiryo,sans-serif;
+  color:var(--ink);background:var(--desk);font-synthesis:none;color-scheme:light
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{display:flex;flex-direction:column;padding:12px;background:var(--desk)}
+button,input,select,textarea{font:inherit;color:inherit}
+button,select,input[type=color]{cursor:pointer}
+button{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--ink);border-radius:0;background:transparent;padding:7px 10px;font-size:12px}
+button:hover{background:#efe4d2}
+button:disabled{opacity:.4;cursor:default}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+button[aria-pressed=true]{color:var(--red);border-color:var(--red);font-weight:700;background:transparent;box-shadow:inset 0 -2px 0 var(--red)}
+.primary{background:var(--red);color:#fff;border-color:var(--red);font-weight:700}
+.primary:hover{background:#a62d24}
+svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.icon{width:32px;height:32px;padding:6px}
+.muted{color:var(--muted)}
+input:not([type=color]):not([type=checkbox]):not([type=file]),select,textarea{border:1px solid var(--ink);border-radius:0;background:var(--paper);padding:6px 8px;min-width:0;font-size:12px}
+select{width:100%}
+input[type=checkbox]{accent-color:var(--red)}
+input[type=number]{width:52px}
+input[type=color]{border:1px solid var(--ink);background:var(--paper);width:32px;height:32px;padding:2px;flex-shrink:0;border-radius:0}
+input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+input[type=color]::-webkit-color-swatch{border:0;border-radius:0}
+.sheet{flex:1;min-height:0;display:flex;flex-direction:column;border:3px solid var(--ink);background:var(--paper)}
+header{display:flex;align-items:center;gap:14px;padding:8px 14px;border-bottom:3px solid var(--ink);background:var(--paper);flex-shrink:0}
+.brand{display:flex;align-items:center;padding-right:14px;border-right:2px solid var(--ink);white-space:nowrap}
+.wordmark{font-family:var(--mincho);font-size:28px;font-weight:500;letter-spacing:0;line-height:1}
+.tag{margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mincho);font-size:15px;font-weight:500}
+.header-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;flex-shrink:0}
+.header-actions button{white-space:nowrap}
+.saved{font-size:11px;color:var(--muted);margin-right:4px}
+main{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.project-title{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:11px;white-space:nowrap}
+#filename{width:140px;background:var(--paper);font-family:var(--mincho)}
+.workspace{flex:1;min-height:0;display:grid;grid-template-columns:260px minmax(280px,1fr) 312px}
+.panel{background:transparent;border:0;border-radius:0;min-width:0}
+.left-column,.right-column,.editor{min-height:0;overflow:auto}
+.left-column{border-right:2px solid var(--ink)}
+.right-column{border-left:2px solid var(--ink)}
+.section{padding:12px 12px 14px;border-bottom:1px solid var(--ink)}
+.section:last-child{border-bottom:0}
+.section-title{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin:0 0 12px;padding-bottom:3px;border-bottom:1px solid var(--ink);font-family:var(--mincho);font-size:16px;font-weight:600}
+.section-title span{font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN",Meiryo,sans-serif;font-size:11px;font-weight:400;letter-spacing:0;color:var(--muted)}
+.hint{color:var(--muted);font-size:11px;line-height:1.7;margin:10px 0 0}
+.type-list{display:grid;gap:0;margin-bottom:10px;border:1px solid var(--ink)}
+.type-button{justify-content:flex-start;padding:8px;text-align:left;min-width:0;border:0;border-bottom:1px solid var(--ink);border-radius:0;box-shadow:none}
+.type-list .type-button:last-child{border-bottom:0}
+.type-button[aria-pressed=true]{box-shadow:inset 3px 0 0 var(--red);color:var(--red);background:transparent}
+.type-button .type-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.type-button small{font-size:11px;color:var(--muted)}
+.type-button[aria-pressed=true] small{color:var(--red)}
+.type-dot{width:10px;height:10px;border-radius:0;outline:1px solid var(--ink);flex-shrink:0}
+.type-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}
+.type-actions button:not(.icon){grid-column:1;min-width:0}
+.type-actions .icon{grid-column:2;grid-row:1/span 2;height:auto}
+.form-row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12px;margin:12px 0}
+.form-row input:not([type=color]){width:100%}
+.style-label{display:block;font-size:12px;margin:14px 0 6px;font-weight:600}
+.tools{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--ink)}
+.tool{height:42px;padding:8px 4px;border:0;border-right:1px solid var(--ink);border-bottom:1px solid var(--ink);border-radius:0;background:transparent;box-shadow:none}
+.tool:nth-child(3n){border-right:0}
+.tool:nth-child(n+4){border-bottom:0}
+.tool[aria-pressed=true]{background:transparent;color:var(--red);box-shadow:inset 3px 0 0 var(--red)}
+.tool[aria-pressed=true]:hover{background:#f8ebe4}
+.tool span{display:none}
+.size-line{display:flex;justify-content:space-between;font-size:12px;margin:12px 0 6px}
+.size-options,.style-presets,.field-toolbar,.preview-scale{display:flex;gap:0;border:1px solid var(--ink)}
+.size-options button,.style-presets button,.field-toolbar button,.preview-scale button{flex:1;border:0;border-right:1px solid var(--ink);border-radius:0;box-shadow:none;background:transparent}
+.size-options button:last-child,.style-presets button:last-child,.field-toolbar button:last-child,.preview-scale button:last-child{border-right:0}
+.size-options button[aria-pressed=true]{background:var(--ink);color:var(--paper);box-shadow:none}
+.style-presets button[aria-pressed=true],.field-toolbar button[aria-pressed=true],.preview-scale button[aria-pressed=true]{background:var(--red);color:#fff;box-shadow:none}
+.style-presets button[aria-pressed=true]:hover,.field-toolbar button[aria-pressed=true]:hover,.preview-scale button[aria-pressed=true]:hover{background:#a62d24}
+.size-options button{padding:6px;font-size:12px}
+.style-presets{margin:8px 0 12px}
+.style-presets button{padding:6px 3px;font-size:12px}
+.field-toolbar{margin-bottom:12px}
+.field-toolbar button{padding:7px 4px}
+.color-current{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+#hex{width:100%;font-family:ui-monospace,monospace;font-size:12px}
+.swatches{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;max-height:230px;overflow:auto;padding:4px}
+.swatch{aspect-ratio:1;padding:0;border:1px solid var(--ink);border-radius:0}
+.swatch[aria-pressed=true]{outline:2px solid var(--red);outline-offset:2px}
+.keys{font-size:11px;color:var(--muted);line-height:1.9}
+.keys kbd{font:inherit;color:var(--ink);background:transparent;border:1px solid var(--ink);border-radius:0;padding:0 4px}
+.editor{min-width:0}
+.editor-top{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border-bottom:1px solid var(--ink);min-height:52px}
+.tile-heading{font-size:12px;min-width:0}
+.tile-heading strong{font-family:var(--mincho);font-weight:600;font-size:18px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px}
+.tile-heading small{font-size:11px;color:var(--muted);display:block;margin-top:3px}
+.editor-controls{display:flex;gap:4px;align-items:center}
+.editor-controls button[aria-pressed=true]{background:var(--red);color:#fff;box-shadow:none}
+.separator{height:18px;width:1px;background:var(--ink);margin:0 4px}
+.stage{height:382px;overflow:auto;display:flex;padding:28px;background-color:#f3ecdf;background-image:linear-gradient(#ddcfb8 1px,transparent 1px),linear-gradient(90deg,#ddcfb8 1px,transparent 1px);background-size:16px 16px;overscroll-behavior:contain}
+.canvas-wrap{position:relative;flex-shrink:0;margin:auto;line-height:0;border:2px solid var(--ink)}
+.checker{background-color:#fff;background-image:conic-gradient(#efe6d6 25%,transparent 0 50%,#efe6d6 0 75%,transparent 0);background-size:16px 16px}
+canvas{image-rendering:pixelated}
+#canvas{display:block;touch-action:none;cursor:crosshair}
+.canvas-wrap.inactive{opacity:.35;pointer-events:none}
+.grid-overlay{position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(to right,#1b140e33 1px,transparent 1px),linear-gradient(to bottom,#1b140e33 1px,transparent 1px)}
+#marquee{position:absolute;pointer-events:none;border:1px dashed var(--red);background:#c5362b22;z-index:1}
+#marquee[hidden]{display:none}
+.editor-bottom{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;font-size:11px;color:var(--muted);border-top:2px solid var(--ink)}
+.zoom{display:flex;align-items:center;gap:4px}
+.zoom button{padding:0;width:26px;height:26px}
+.zoom output{min-width:42px;text-align:center;font-variant-numeric:tabular-nums}
+.selection-info{display:flex;gap:12px;padding:12px;border-top:1px solid var(--ink);align-items:center;min-height:64px}
+.peering{display:grid;grid-template-columns:repeat(3,10px);grid-template-rows:repeat(3,10px);gap:0;flex-shrink:0;border:1px solid var(--ink)}
+.peering i{background:#e4d8c8}
+.peering i.on{background:var(--red)}
+.peering i.off{background:transparent;box-shadow:inset 0 0 0 1px var(--muted)}
+.selection-info p{font-size:12px;line-height:1.7;margin:0;color:var(--muted)}
+.selection-info strong{font-size:12px;color:var(--ink);font-weight:600}
+.tile-panel{border-top:2px solid var(--ink)}
+.tile-panel .section-title{padding:12px 12px 4px;margin:0}
+.tile-filter{padding:8px 12px 10px;display:flex;justify-content:space-between;align-items:center;gap:10px;color:var(--muted);font-size:12px}
+.tile-filter label{display:flex;gap:6px;align-items:center}
+.tile-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;padding:0 12px 12px;max-height:260px;overflow:auto}
+.tile-card{position:relative;flex-direction:column;gap:4px;padding:6px 4px 4px;background:transparent;border:1px solid var(--ink);border-radius:0}
+.tile-card[aria-pressed=true]{border:2px solid var(--red);box-shadow:none;color:inherit;background:transparent}
+.tile-card canvas{width:36px;height:36px}
+.tile-card small{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
+.tile-card .usage{position:absolute;top:3px;right:4px;font-size:10px;color:var(--red)}
+.tile-card .peering{position:absolute;left:4px;top:5px;transform:scale(.34);transform-origin:top left}
+.tile-card.edited:after{content:'';position:absolute;right:5px;bottom:6px;width:5px;height:5px;background:var(--red)}
+.tile-footnote{padding:0 12px 12px;font-size:11px;color:var(--muted)}
+.field-scroll{overflow:auto;max-height:320px}
+.field-grid{display:grid;gap:1px;width:max-content;margin:auto;padding:1px;background:var(--ink);touch-action:none}
+.field-cell{padding:0;border:0;border-radius:0;width:28px;height:28px;font-size:10px;position:relative;color:#fff;text-shadow:0 1px 1px #0006}
+.field-cell.empty{color:var(--muted);text-shadow:none;background:#efe6d6}
+.field-cell[aria-pressed=true]{outline:2px solid var(--red);outline-offset:-3px;z-index:1;box-shadow:none;color:#fff;font-weight:700}
+.field-cell.empty[aria-pressed=true]{color:var(--ink)}
+.field-cell.related:after{content:'';position:absolute;bottom:3px;right:3px;width:4px;height:4px;background:#fff}
+.field-size{display:flex;align-items:center;gap:6px;margin-top:12px;font-size:12px}
+.field-size input{width:48px;padding:6px}
+.field-size button{margin-left:auto;padding:6px 8px}
+.map-preview{overflow:auto;max-height:330px;padding:10px;display:flex;border:1px solid var(--ink)}
+.map-preview.checker-dark{background-color:#2b2b2b;background-image:conic-gradient(#3d3d3d 25%,transparent 0 50%,#3d3d3d 0 75%,transparent 0);background-size:16px 16px}
+.map-preview.gray{background:#808080;background-image:none}
+.map-preview canvas{margin:auto;display:block;flex-shrink:0;cursor:pointer}
+.preview-bar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--muted);margin-top:10px}
+.preview-bar .preview-scale{flex:none}
+.preview-scale button{flex:0 0 auto;white-space:nowrap;padding:4px 8px;font-size:11px}
+#export{width:100%}
+.empty-message{font-size:12px;color:var(--muted);padding:12px}
+.rules{margin:0;padding:12px 14px 16px;color:var(--muted);font-size:12px;line-height:1.7;border-top:2px solid var(--ink)}
+.rules summary{cursor:pointer;font-family:var(--mincho);font-size:15px;color:var(--ink)}
+.rules p{margin:8px 0}
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);max-width:90vw;width:max-content;padding:12px 16px;border-radius:0;background:var(--ink);color:var(--paper);font-size:12px;z-index:10}
+#toast:empty{display:none}
+dialog{border:2px solid var(--ink);border-radius:0;padding:22px;width:min(440px,calc(100vw - 24px));color:var(--ink);background:var(--paper)}
+dialog::backdrop{background:#1b140e88}
+dialog h2{font-family:var(--mincho);font-size:20px;font-weight:600;margin:0 0 16px;padding-bottom:6px;border-bottom:1px solid var(--ink)}
+dialog label{display:grid;gap:8px;font-size:12px;margin:14px 0}
+dialog .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+.palette-actions{display:flex;gap:6px;margin-top:10px}
+.palette-actions button{flex:1;padding:6px 4px}
+#palette-snap{width:100%;margin-top:8px;font-size:12px}
+#palette-text{width:100%;min-height:132px;resize:vertical;border:1px solid var(--ink);border-radius:0;padding:10px;font:12px ui-monospace,monospace;color:inherit;background:var(--paper)}
+#palette-file{width:100%}
+#palette-import-status{min-height:2em;overflow-wrap:anywhere}
+#palette-import-preview{display:flex;flex-wrap:wrap;gap:4px;margin-top:10px}
+#palette-import-preview span{width:18px;height:18px;border:1px solid var(--ink);border-radius:0}
+.snap-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0 0}
+.snap-choices button{flex-direction:column;height:auto;padding:10px 8px;gap:8px;font-size:12px}
+.snap-choices button[aria-pressed=true]{background:var(--red);color:#fff;box-shadow:none}
+.snap-choices button[aria-pressed=true] small{color:#fff}
+.snap-choices canvas{width:100%;aspect-ratio:1;display:block;border:1px solid var(--ink)}
+.snap-choices small{font-size:11px;font-weight:400;line-height:1.4;color:var(--muted)}
+.direction-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0;max-width:168px;margin:8px auto 0;border:1px solid var(--ink)}
+.direction-grid label{display:flex;align-items:center;justify-content:center;gap:3px;min-height:32px;border:0;border-right:1px solid var(--ink);border-bottom:1px solid var(--ink);border-radius:0;cursor:pointer;color:var(--muted);background:transparent}
+.direction-grid label:nth-child(3n){border-right:0}
+.direction-grid label:nth-child(n+7){border-bottom:0}
+.direction-grid label:has(:checked){background:transparent;color:var(--red)}
+.direction-grid input{accent-color:var(--red);width:12px;height:12px;margin:0}
+.direction-center{display:grid;place-items:center;font-size:13px;color:var(--ink);border-right:1px solid var(--ink);border-bottom:1px solid var(--ink)}
+.export-description{margin:0 0 12px}
+#style-description{overflow-wrap:anywhere}
+.symmetry-options{display:flex;flex-wrap:wrap;gap:8px 12px;font-size:12px}
+.symmetry-options label{display:flex;gap:4px;align-items:center}
+.symmetry-options label:has(:disabled){opacity:.45}
+.symmetry-options input{margin:0}
+.symmetry-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border-top:1px solid var(--ink)}
+#tile-origin{font-size:12px;color:var(--muted)}
+#tile-origin.derived{color:var(--red)}
+#bake-symmetry{font-size:12px}
+.tile-card.derived{border-style:dashed}
+.derived-badge{position:absolute;bottom:4px;right:3px;font-size:10px;line-height:1.3;color:var(--red);background:var(--paper);border:1px solid var(--red);border-radius:0;padding:0 2px}
+.derived-badge[hidden]{display:none}
+@media(min-width:1450px){
+  .workspace{grid-template-columns:280px minmax(400px,1fr) 340px}
+  .stage{height:460px}
+  .field-cell{width:32px;height:32px}
+}
+@media(max-width:1120px){
+  .tag{display:none}
+  .workspace{grid-template-columns:228px minmax(260px,1fr) 268px}
+  .stage{height:340px}
+  .field-cell{width:26px;height:26px}
+  .tile-heading strong{max-width:180px}
+  .icon{width:30px}
+}
+@media(max-width:1000px){
+  html,body{height:auto}
+  body{display:block;overflow:auto}
+  .sheet{min-height:100vh;display:block}
+  main{display:block;overflow:visible;height:auto}
+  .workspace{display:grid;grid-template-columns:210px minmax(0,1fr);height:auto}
+  .left-column,.editor,.right-column{overflow:visible}
+  .right-column{grid-column:1/-1;border-left:0;border-top:2px solid var(--ink);display:grid;grid-template-columns:1fr 1fr}
+  .right-column .panel:last-child{grid-column:1/-1}
+  .saved{display:none}
+}
+@media(max-width:640px){
+  body{padding:0}
+  .sheet{border-left:0;border-right:0}
+  header{flex-wrap:wrap;align-items:flex-start;gap:8px;padding:10px}
+  .project-title{margin-left:0;width:100%}
+  #filename{flex:1;width:auto}
+  .header-actions{width:100%}
+  .header-actions svg{display:none}
+  .wordmark{font-size:22px}
+  .workspace{grid-template-columns:1fr}
+  .left-column{border-right:0;border-bottom:2px solid var(--ink)}
+  .left-column .keys{display:none}
+  .right-column{grid-template-columns:1fr}
+  .right-column .panel:last-child{grid-column:auto}
+  .stage{height:300px;padding:16px}
+  .editor-top{flex-wrap:wrap}
+  .tile-list{max-height:220px}
+  .field-cell{width:30px;height:30px}
+  input[type=color]{width:28px;height:28px}
+}
 </style>
 </head><body>
 <svg style="display:none" xmlns="http://www.w3.org/2000/svg"><defs>
@@ -33,12 +258,13 @@ header{min-height:76px;padding:18px 28px;display:flex;align-items:center;justify
 <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
 <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></symbol>
 </defs></svg>
-<header><div class="brand"><div class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><span class="wordmark">DOT</span><small>MAP CHIP STUDIO</small></div><div class="header-actions"><span class="saved" id="save-status" role="status">このブラウザに自動保存</span><button id="new-project"><svg><use href="#i-plus"/></svg>新規</button><button id="open-project">開く</button><button class="primary" id="save-project"><svg><use href="#i-download"/></svg>上書き保存</button><button id="save-project-as" title="Ctrl / ⌘ Shift S">名前を付けて保存…</button><input type="file" id="project-file" accept=".json,.dotmap,application/json" hidden></div></header>
-<main><div class="intro"><div><div class="eyebrow">BUILD A WORLD, ONE TILE AT A TIME</div><h1>つながるドットで、世界をつくる。</h1><p>マスを選んで、タイルを描く。同じパターンのすべての場所に、リアルタイムで反映。</p></div><label class="project-title">PROJECT <input id="filename" value="小さな世界" maxlength="80" aria-label="プロジェクト名"></label></div>
+<div class="sheet">
+<header><div class="brand"><span class="wordmark">DOT</span></div><h1 class="tag">つながるドットで、世界をつくる。</h1><label class="project-title">ファイル名 <input id="filename" value="小さな世界" maxlength="80" aria-label="ファイル名"></label><div class="header-actions"><span class="saved" id="save-status" role="status">このブラウザに自動保存</span><button id="new-project"><svg><use href="#i-plus"/></svg>新規</button><button id="open-project">開く</button><button class="primary" id="save-project"><svg><use href="#i-download"/></svg>上書き保存</button><button id="save-project-as" title="Ctrl / ⌘ Shift S">名前を付けて保存…</button><input type="file" id="project-file" accept=".json,.dotmap,application/json" hidden></div></header>
+<main>
 <div class="workspace">
 <aside class="panel left-column" aria-label="マップチップと描画ツール">
-<section class="section"><h2 class="section-title">マップチップ <span id="type-count">3 TYPES</span></h2><div id="type-list" class="type-list"></div><div class="type-actions"><button id="add-type"><svg style="width:13px;height:13px"><use href="#i-plus"/></svg>種類を追加</button><button id="import-atlas" title="dot-map-atlas 対応表入りのPNGから種類を追加">PNGから追加</button><input type="file" id="atlas-file" accept=".png,image/png" hidden><button class="icon" id="delete-type" aria-label="選択中の種類を削除" title="選択中の種類を削除"><svg><use href="#i-trash"/></svg></button></div><label class="form-row"><input id="type-name" aria-label="マップチップ名" maxlength="40"></label><div class="style-label">接続スタイル</div><div class="style-presets"><button data-style-preset="255" title="Match Corners and Sides">辺＋角</button><button data-style-preset="85" title="Match Sides">辺のみ</button><button data-style-preset="170" title="Match Corners">角のみ</button></div><div class="direction-grid" role="group" aria-label="接続判定に使う方向"><label title="左上"><input type="checkbox" data-direction="7" aria-label="左上への接続"><span aria-hidden="true">↖</span></label><label title="上"><input type="checkbox" data-direction="0" aria-label="上への接続"><span aria-hidden="true">↑</span></label><label title="右上"><input type="checkbox" data-direction="1" aria-label="右上への接続"><span aria-hidden="true">↗</span></label><label title="左"><input type="checkbox" data-direction="6" aria-label="左への接続"><span aria-hidden="true">←</span></label><span class="direction-center" aria-hidden="true">●</span><label title="右"><input type="checkbox" data-direction="2" aria-label="右への接続"><span aria-hidden="true">→</span></label><label title="左下"><input type="checkbox" data-direction="5" aria-label="左下への接続"><span aria-hidden="true">↙</span></label><label title="下"><input type="checkbox" data-direction="4" aria-label="下への接続"><span aria-hidden="true">↓</span></label><label title="右下"><input type="checkbox" data-direction="3" aria-label="右下への接続"><span aria-hidden="true">↘</span></label></div><p class="hint" id="style-description"></p><div class="style-label">対称タイルの自動導出</div><div class="symmetry-options" role="group" aria-label="対称タイルに使う変換"><label><input type="checkbox" data-symmetry="1">左右反転</label><label><input type="checkbox" data-symmetry="2">上下反転</label><label><input type="checkbox" data-symmetry="4">回転</label><label><input type="checkbox" id="center-fill">中央タイルから埋める</label></div><p class="hint">未編集のタイルを、描いたタイルから自動で作ります。描き始めると独立します。光源を固定する場合は回転をオフに。</p></section>
-<section class="section"><h2 class="section-title">ツール <span>TOOLS</span></h2><div class="tools">
+<section class="section"><h2 class="section-title">マップチップ <span id="type-count">3 種類</span></h2><div id="type-list" class="type-list"></div><div class="type-actions"><button id="add-type"><svg style="width:13px;height:13px"><use href="#i-plus"/></svg>種類を追加</button><button id="import-atlas" title="dot-map-atlas 対応表入りのPNGから種類を追加">PNGから追加</button><input type="file" id="atlas-file" accept=".png,image/png" hidden><button class="icon" id="delete-type" aria-label="選択中の種類を削除" title="選択中の種類を削除"><svg><use href="#i-trash"/></svg></button></div><label class="form-row"><input id="type-name" aria-label="マップチップ名" maxlength="40"></label><div class="style-label">接続スタイル</div><div class="style-presets"><button data-style-preset="255" title="辺と角">辺＋角</button><button data-style-preset="85" title="辺のみ">辺のみ</button><button data-style-preset="170" title="角のみ">角のみ</button></div><div class="direction-grid" role="group" aria-label="接続判定に使う方向"><label title="左上"><input type="checkbox" data-direction="7" aria-label="左上への接続"><span aria-hidden="true">↖</span></label><label title="上"><input type="checkbox" data-direction="0" aria-label="上への接続"><span aria-hidden="true">↑</span></label><label title="右上"><input type="checkbox" data-direction="1" aria-label="右上への接続"><span aria-hidden="true">↗</span></label><label title="左"><input type="checkbox" data-direction="6" aria-label="左への接続"><span aria-hidden="true">←</span></label><span class="direction-center" aria-hidden="true">●</span><label title="右"><input type="checkbox" data-direction="2" aria-label="右への接続"><span aria-hidden="true">→</span></label><label title="左下"><input type="checkbox" data-direction="5" aria-label="左下への接続"><span aria-hidden="true">↙</span></label><label title="下"><input type="checkbox" data-direction="4" aria-label="下への接続"><span aria-hidden="true">↓</span></label><label title="右下"><input type="checkbox" data-direction="3" aria-label="右下への接続"><span aria-hidden="true">↘</span></label></div><p class="hint" id="style-description"></p><div class="style-label">対称タイルの自動導出</div><div class="symmetry-options" role="group" aria-label="対称タイルに使う変換"><label><input type="checkbox" data-symmetry="1">左右反転</label><label><input type="checkbox" data-symmetry="2">上下反転</label><label><input type="checkbox" data-symmetry="4">回転</label><label><input type="checkbox" id="center-fill">中央タイルから埋める</label></div><p class="hint">未編集のタイルを、描いたタイルから自動で作ります。描き始めると独立します。光源を固定する場合は回転をオフに。</p></section>
+<section class="section"><h2 class="section-title">ツール</h2><div class="tools">
 <button class="tool" data-tool="pen" aria-pressed="true" title="ペン (B)" aria-label="ペン"><svg><use href="#i-pen"/></svg><span>ペン</span></button>
 <button class="tool" data-tool="line" aria-pressed="false" title="直線 (L)" aria-label="直線"><svg><use href="#i-line"/></svg><span>直線</span></button>
 <button class="tool" data-tool="eraser" aria-pressed="false" title="消しゴム (E)" aria-label="消しゴム"><svg><use href="#i-eraser"/></svg><span>消しゴム</span></button>
@@ -46,18 +272,18 @@ header{min-height:76px;padding:18px 28px;display:flex;align-items:center;justify
 <button class="tool" data-tool="picker" aria-pressed="false" title="スポイト (I)" aria-label="スポイト"><svg><use href="#i-picker"/></svg><span>スポイト</span></button>
 <button class="tool" data-tool="select" aria-pressed="false" title="範囲選択 (M) ／ 範囲内をドラッグして移動" aria-label="範囲選択"><svg><use href="#i-select"/></svg><span>選択</span></button>
 </div><div class="size-line"><span>ペンのサイズ</span><span class="muted" id="brush-label">1 px</span></div><div class="size-options" aria-label="ペンサイズ"><button data-size="1" aria-pressed="true">1</button><button data-size="2" aria-pressed="false">2</button><button data-size="3" aria-pressed="false">3</button><button data-size="4" aria-pressed="false">4</button></div></section>
-<section class="section"><h2 class="section-title">カラーパレット <span id="palette-count">自然（既定） · 20 COLORS</span></h2><div class="color-current"><input type="color" id="color" value="#628b53" aria-label="描画色"><input id="hex" value="#628B53" maxlength="7" aria-label="カラーコード" spellcheck="false"></div><div class="swatches" id="palette" aria-label="プロジェクトのパレット"></div><div class="palette-actions"><button id="palette-add" title="現在の描画色を追加">＋ 追加</button><button id="palette-delete" title="選択中のスウォッチを削除">− 削除</button></div><div class="palette-actions"><button id="palette-import">読み込む</button><button id="palette-export">保存</button></div><button id="palette-snap" title="選択中の種類の実体タイルをパレット色へ寄せます。寄せ方を3通りから選べます">種類の色を寄せる</button><p class="hint">追加・削除・読み込みはパレットだけを変えます。ドットの色を変えるのは「種類の色を寄せる」です。</p></section>
+<section class="section"><h2 class="section-title">カラーパレット <span id="palette-count">自然（既定） · 20色</span></h2><div class="color-current"><input type="color" id="color" value="#628b53" aria-label="描画色"><input id="hex" value="#628B53" maxlength="7" aria-label="カラーコード" spellcheck="false"></div><div class="swatches" id="palette" aria-label="プロジェクトのパレット"></div><div class="palette-actions"><button id="palette-add" title="現在の描画色を追加">＋ 追加</button><button id="palette-delete" title="選択中のスウォッチを削除">− 削除</button></div><div class="palette-actions"><button id="palette-import">読み込む</button><button id="palette-export">保存</button></div><button id="palette-snap" title="選択中の種類の実体タイルをパレット色へ寄せます。寄せ方を3通りから選べます">種類の色を寄せる</button><p class="hint">追加・削除・読み込みはパレットだけを変えます。ドットの色を変えるのは「種類の色を寄せる」です。</p></section>
 <section class="section keys"><kbd>B</kbd> ペン　<kbd>L</kbd> 直線<br><kbd>E</kbd> 消しゴム　<kbd>G</kbd> 塗りつぶし<br><kbd>I</kbd> スポイト　<kbd>M</kbd> 範囲選択<br><kbd>⌘ / Ctrl C V X</kbd> コピー／貼付／切取<br><kbd>⌘ / Ctrl A</kbd> 全体選択　<kbd>Esc</kbd> 選択解除　範囲外クリックでも解除<br><kbd>⌘ / Ctrl Z</kbd> 元に戻す<br><kbd>Alt + クリック</kbd> 色を拾う<br>範囲内ドラッグで移動</section>
 </aside>
 <section class="editor" aria-label="タイル編集"><div class="panel"><div class="editor-top"><div class="tile-heading"><strong id="tile-title"></strong><small id="tile-subtitle"></small></div><div class="editor-controls"><button class="icon" id="undo" aria-label="元に戻す" title="元に戻す (⌘/Ctrl Z)"><svg><use href="#i-undo"/></svg></button><button class="icon" id="redo" aria-label="やり直す" title="やり直す (⌘/Ctrl Shift Z)"><svg><use href="#i-redo"/></svg></button><div class="separator"></div><button class="icon" id="grid" aria-label="グリッド表示" title="グリッド表示" aria-pressed="true"><svg><use href="#i-grid"/></svg></button><button class="icon" id="clear" aria-label="選択タイルを未編集に戻す" title="選択タイルを未編集に戻す（実体を削除）"><svg><use href="#i-trash"/></svg></button></div></div><div class="stage" id="stage"><div class="canvas-wrap checker" id="canvas-wrap"><canvas id="canvas" width="16" height="16" aria-label="選択タイルのドット絵描画領域"></canvas><div class="grid-overlay" id="grid-overlay"></div><div id="marquee" hidden></div></div></div><div class="editor-bottom"><span id="canvas-info">16 × 16 px</span><span id="coordinates">X: —　Y: —</span><div class="zoom"><button id="zoom-out" aria-label="縮小"><svg><use href="#i-minus"/></svg></button><output id="zoom-label"></output><button id="zoom-in" aria-label="拡大"><svg><use href="#i-plus"/></svg></button></div></div><div class="symmetry-bar"><span id="tile-origin" role="status"></span><button id="bake-symmetry" title="未保存の対称タイルにだけコピーします。実体があるタイルは上書きしません。">対称タイルへ焼き込む</button></div><div class="selection-info"><div id="selected-peering" class="peering" aria-hidden="true"></div><p><strong id="shared-count"></strong><br><span id="selection-description"></span></p></div></div>
-<div class="panel tile-panel"><h2 class="section-title">タイル一覧 <span id="tile-count"></span></h2><div class="tile-filter"><span>接続パターンから直接編集</span><label><input type="checkbox" id="used-only">使用中のみ</label></div><div id="tile-list" class="tile-list"></div><div class="tile-footnote">右上の数字：使用マス数 ／ 緑の点：実体 ／ 導出：反転・回転で自動表示</div></div>
+<div class="panel tile-panel"><h2 class="section-title">タイル一覧 <span id="tile-count"></span></h2><div class="tile-filter"><span>接続パターンから直接編集</span><label><input type="checkbox" id="used-only">使用中のみ</label></div><div id="tile-list" class="tile-list"></div><div class="tile-footnote">右上の数字：使用マス数 ／ 朱の点：実体 ／ 導出：反転・回転で自動表示</div></div>
 <details class="rules"><summary>接続ルールについて</summary><p>3×3グリッドで判定する方向を選びます。辺＋角・辺のみ・角のみのプリセットも使えます。方向を選ばない場合は1枚、左右のみなら4枚です。フィールドの外・空のマス・別の種類は未接続です。</p><p>角の隣の2辺がどちらも判定対象なら、その2辺が両方つながるときだけ角を有効にします。片方でも判定対象外なら、角は単独で判定します。</p><p>スタイル変更後も使えるタイルは保持します。使えなくなる編集済みタイルは確認後に破棄しますが、Undoで復元できます。</p></details>
 </section>
 <aside class="right-column" aria-label="サンプルフィールド">
-<section class="panel section"><h2 class="section-title">フィールド編集 <span>LAYOUT</span></h2><div class="field-toolbar"><button data-field-tool="select" aria-pressed="true">マスを選択</button><button data-field-tool="paint" aria-pressed="false">配置</button><button data-field-tool="erase" aria-pressed="false">消去</button></div><div class="field-scroll"><div id="field-grid" class="field-grid" role="group" aria-label="色分けされたフィールド"></div></div><p class="hint" id="field-hint">マスを選ぶと、その場所のタイルを編集できます。</p><div class="field-size"><label>横 <input type="number" id="field-width" min="1" max="32" aria-label="フィールドの横マス数"></label><span>×</span><label>縦 <input type="number" id="field-height" min="1" max="32" aria-label="フィールドの縦マス数"></label><button id="resize-field">変更</button></div></section>
-<section class="panel section"><h2 class="section-title">フィールド表示 <span>LIVE PREVIEW</span></h2><div class="map-preview checker" id="map-preview-wrap"><canvas id="map-preview" aria-label="タイルを配置したフィールドのリアルタイム表示"></canvas></div><div class="preview-bar"><span id="field-dimensions"></span><div class="preview-scale" role="group" aria-label="背景"><button data-preview-bg="checker" aria-pressed="true">市松</button><button data-preview-bg="dark" aria-pressed="false">ダーク</button><button data-preview-bg="gray" aria-pressed="false">グレー</button></div><div class="preview-scale"><button data-preview="1" aria-pressed="false">1×</button><button data-preview="2" aria-pressed="true">2×</button><button data-preview="3" aria-pressed="false">3×</button></div></div><p class="hint">こちらの表示からもマスを選択できます。</p></section>
-<section class="panel section"><h2 class="section-title">アトラス書き出し <span>EXPORT</span></h2><p class="hint export-description">全種類のタイルを1枚のPNGに。<br>種類ごとに行を分け、接続パターン順に並べます。</p><button class="primary" id="export"><svg><use href="#i-download"/></svg>アトラスPNGを保存…</button><p class="hint" id="export-info"></p><p class="hint">対応表はPNGの中に保存されます。<br>編集を続けるときは「上書き保存」または「名前を付けて保存」を使ってください。</p></section>
-</aside></div><footer class="footer"><span>DOT — マップチップスタジオ</span><span>ひとつのファイルに、タイルと小さな世界を。</span></footer></main>
+<section class="panel section"><h2 class="section-title">フィールド編集</h2><div class="field-toolbar"><button data-field-tool="select" aria-pressed="true">マスを選択</button><button data-field-tool="paint" aria-pressed="false">配置</button><button data-field-tool="erase" aria-pressed="false">消去</button></div><div class="field-scroll"><div id="field-grid" class="field-grid" role="group" aria-label="色分けされたフィールド"></div></div><p class="hint" id="field-hint">マスを選ぶと、その場所のタイルを編集できます。</p><div class="field-size"><label>横 <input type="number" id="field-width" min="1" max="32" aria-label="フィールドの横マス数"></label><span>×</span><label>縦 <input type="number" id="field-height" min="1" max="32" aria-label="フィールドの縦マス数"></label><button id="resize-field">変更</button></div></section>
+<section class="panel section"><h2 class="section-title">フィールド表示</h2><div class="map-preview checker" id="map-preview-wrap"><canvas id="map-preview" aria-label="タイルを配置したフィールドのリアルタイム表示"></canvas></div><div class="preview-bar"><span id="field-dimensions"></span><div class="preview-scale" role="group" aria-label="背景"><button data-preview-bg="checker" aria-pressed="true">市松</button><button data-preview-bg="dark" aria-pressed="false">ダーク</button><button data-preview-bg="gray" aria-pressed="false">グレー</button></div><div class="preview-scale"><button data-preview="1" aria-pressed="false">1×</button><button data-preview="2" aria-pressed="true">2×</button><button data-preview="3" aria-pressed="false">3×</button></div></div><p class="hint">こちらの表示からもマスを選択できます。</p></section>
+<section class="panel section"><h2 class="section-title">アトラス書き出し</h2><p class="hint export-description">全種類のタイルを1枚のPNGに。<br>種類ごとに行を分け、接続パターン順に並べます。</p><button class="primary" id="export"><svg><use href="#i-download"/></svg>アトラスPNGを保存…</button><p class="hint" id="export-info"></p><p class="hint">対応表はPNGの中に保存されます。<br>編集を続けるときは「上書き保存」または「名前を付けて保存」を使ってください。</p></section>
+</aside></div></main></div>
 <dialog id="style-dialog" aria-labelledby="style-confirm-title"><form id="style-form"><h2 id="style-confirm-title">接続スタイルを変更しますか？</h2><p class="hint" id="style-confirm-message"></p><div class="actions"><button type="button" id="style-cancel" autofocus>キャンセル</button><button type="submit" class="primary" id="style-apply">破棄して変更</button></div></form></dialog>
 <dialog id="new-dialog"><form id="new-form"><h2>新しいプロジェクト</h2><label>作品名<input id="new-name" value="無題の世界" maxlength="80" required></label><label>タイルのサイズ<select id="new-size"><option value="8">8 × 8 px</option><option value="16" selected>16 × 16 px</option><option value="32">32 × 32 px</option><option value="64">64 × 64 px</option></select></label><p class="hint">現在の作品は「上書き保存」または「名前を付けて保存」でファイルに残せます。</p><div class="actions"><button type="button" id="cancel-new">キャンセル</button><button type="submit" class="primary">作成する</button></div></form></dialog>
 <dialog id="palette-dialog"><form id="palette-form"><h2>パレットを読み込む</h2><label for="palette-preset">プリセット<select id="palette-preset"><option value="">ファイルまたはテキスト</option></select></label><label for="palette-text">テキストを貼り付け<textarea id="palette-text" spellcheck="false" placeholder="#ff8844&#10;80AABBCC&#10;120 180 90"></textarea></label><label for="palette-file">またはファイルを選択<input type="file" id="palette-file" accept=".hex,.gpl,.txt,.png,text/plain,image/png"></label><p class="hint">6桁HEX・8桁ARGB（下6桁）・R G Bの行をまとめて読み込みます。PNGは左上から行順に全ピクセルのRGBを抽出します（透明度は無視）。</p><label for="palette-import-mode">読み込み方法<select id="palette-import-mode"><option value="replace">置き換え</option><option value="append">追加（既存の色はスキップ）</option></select></label><p class="hint" id="palette-import-status" role="status"></p><div id="palette-import-preview" aria-label="読み込む色のプレビュー（先頭40色）"></div><div class="actions"><button type="button" id="palette-cancel">キャンセル</button><button type="submit" class="primary" id="palette-apply" disabled>読み込む</button></div></form></dialog>

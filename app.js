@@ -104,7 +104,7 @@ function renderTypes() {
     button.append(dot,name,number);button.onclick=()=>{finishGesture();selection={typeId:type.id,mask:0,cell:null};renderAll();};
     $('type-list').append(button);
   });
-  $('type-count').textContent=project.types.length+' TYPES';
+  $('type-count').textContent=project.types.length+' 種類';
   $('type-name').value=currentType().name;
   const bits=currentType().styleBits;
   document.querySelectorAll('[data-direction]').forEach(input=>input.checked=Boolean(bits & (1<<Number(input.dataset.direction))));
@@ -123,7 +123,7 @@ function renderTileList() {
   const type=currentType(), counts=usageCounts(type.id), list=patterns(type.styleBits);
   $('tile-list').replaceChildren();tileCards=new Map();
   const visible=list.filter(mask=>!$('used-only').checked||counts.has(mask));
-  $('tile-count').textContent=`${visible.length} / ${list.length} TILES`;
+  $('tile-count').textContent=`${visible.length} / ${list.length}`;
   visible.forEach(mask=>{
     const index=list.indexOf(mask),button=document.createElement('button');button.className='tile-card';button.dataset.mask=mask;
     button.setAttribute('aria-label',`タイル ${index+1}、パターン ${mask}、${counts.get(mask)||0}マスで使用`);
@@ -179,7 +179,7 @@ function renderGraphics() {
     paintPixels(card.querySelector('canvas'),tilePixels(currentType(),size,mask),size);
   }
   $('tile-title').textContent=match?`${match.type.name} / タイル #${String(list.indexOf(match.mask)+1).padStart(2,'0')}`:'空のマス';
-  $('tile-subtitle').textContent=match?`${styleLabel(match.type.styleBits)} · ${list.length} tiles`:'「配置」でマップチップを置いてください';
+  $('tile-subtitle').textContent=match?`${styleLabel(match.type.styleBits)} · ${list.length}枚`:'「配置」でマップチップを置いてください';
   const derived=match&&derivedTile(match.type,match.mask);
   $('tile-origin').textContent=!match?'':derived?`導出：タイル #${String(list.indexOf(derived.sourceMask)+1).padStart(2,'0')} → ${derived.transform.label}（描くと独立）`:Object.hasOwn(match.type.tiles,match.mask)?'実体タイル':'未編集';
   $('tile-origin').classList.toggle('derived',Boolean(derived));
@@ -223,7 +223,7 @@ function renderPalette() {
   });
   $('palette').replaceChildren(fragment);
   const preset=matchPalettePreset(project.palette);
-  $('palette-count').textContent=(preset?preset.name+' · ':'')+project.palette.length+' COLORS';
+  $('palette-count').textContent=(preset?preset.name+' · ':'')+project.palette.length+'色';
   updatePaletteSelection();
 }
 function previewPaletteImport(colors, message) {

@@ -119,9 +119,9 @@ function floodFill(pixels, size, x, y, color) {
 }
 
 const STYLE_PRESETS = [
-  { bits:255, label:'Match Corners and Sides' },
-  { bits:85, label:'Match Sides' },
-  { bits:170, label:'Match Corners' },
+  { bits:255, label:'辺＋角' },
+  { bits:85, label:'辺のみ' },
+  { bits:170, label:'角のみ' },
 ];
 const BIT_ORDER = ['top','topRight','right','bottomRight','bottom','bottomLeft','left','topLeft'];
 const NEIGHBORS = [[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]];
