@@ -242,9 +242,10 @@ async function readPalettePNG(file) {
     return paletteFromPixels(context.getImageData(0,0,canvas.width,canvas.height).data);
   } finally {URL.revokeObjectURL(url);}
 }
+const drawTools=new Set(['pen','line','fill']);
 function setTool(value) {
   finishGesture();
-  if(value==='picker'&&tool!=='picker')lastDrawTool=tool;
+  if(drawTools.has(value))lastDrawTool=value;
   tool=value;document.querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.tool===tool));
   if(value!=='select')canvas.style.cursor='';
 }
