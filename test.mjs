@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import { deflateSync } from 'node:zlib';
 
 const core = readFileSync(new URL('./core.js', import.meta.url), 'utf8');
-const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM})', {TextEncoder, TextDecoder});
+const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM})', {TextEncoder, TextDecoder, crypto});
 const pixels = Array(64).fill(null);
 drawLine(pixels, 8, [0,0], [7,7], '#123456');
 assert.equal(pixels.filter(Boolean).length, 8, 'Fast diagonal strokes must be continuous');
@@ -41,13 +41,14 @@ assert.equal(patternMask(193,128),0,'Top-left wraps to top and left');
 assert.equal(patternMask(193,193),193);
 const neighborProject=createProject();
 neighborProject.field={width:3,height:3,cells:Array(9).fill(null)};
+const neighborId=neighborProject.types[0].id;
 const positions=[1,2,5,8,7,6,3,0];
 for(let styleBits=0;styleBits<256;styleBits++) {
   const masks=patterns(styleBits),reachable=new Set();
   neighborProject.types[0].styleBits=styleBits;
   for(let raw=0;raw<256;raw++) {
-    neighborProject.field.cells.fill(null);neighborProject.field.cells[4]='grass';
-    positions.forEach((index,bit)=>{if(raw&(1<<bit))neighborProject.field.cells[index]='grass';});
+    neighborProject.field.cells.fill(null);neighborProject.field.cells[4]=neighborId;
+    positions.forEach((index,bit)=>{if(raw&(1<<bit))neighborProject.field.cells[index]=neighborId;});
     const resolved=resolveCell(neighborProject,4);
     // Independent per-direction oracle: gate each enabled corner by its enabled side pair.
     let expected=0;
@@ -64,10 +65,13 @@ for(let styleBits=0;styleBits<256;styleBits++) {
   assert.equal(reachable.size,masks.length,'Only reachable patterns may be listed');
 }
 const project=createProject();
-project.field={width:3,height:2,cells:['grass','grass','water','water','grass','grass']};
+const grass=project.types[0].id, water=project.types[1].id;
+assert.match(grass,/^tileset-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+assert.equal(new Set(project.types.map(t=>t.id)).size,3);
+project.field={width:3,height:2,cells:[grass,grass,water,water,grass,grass]};
 assert.equal(resolveCell(project,0).raw,12,'N/W boundary must not wrap into another row');
 assert.equal(resolveCell(project,2).mask,0,'Different types are disconnected');
-project.field={width:4,height:4,cells:Array(16).fill('grass')};
+project.field={width:4,height:4,cells:Array(16).fill(grass)};
 assert.equal(resolveCell(project,5).mask,resolveCell(project,10).mask);
 const type=project.types[0], mask=resolveCell(project,5).mask;
 type.symmetry=0;type.centerFill=false;
@@ -81,8 +85,8 @@ assert.equal(type.styleBits,85);assert.equal(type.tiles[255],undefined,'Incompat
 assert.equal(type.tiles[0][0],'#123456','Compatible patterns retain their pixels');
 setStyleBits(type,255);assert.notEqual(tilePixels(type,16,255)[0],'#abcdef','Discarded pixels must not resurrect on another style change');
 const newType=makeType('new','Blank','#123456');assert.ok(tilePixels(newType,16,0).every(p=>p===null));
-resizeField(project,5,3);assert.equal(project.field.cells.length,15);assert.equal(project.field.cells[4],null);assert.equal(project.field.cells[5],'grass');
-removeType(project,'grass');assert.ok(project.field.cells.every(p=>p===null));
+resizeField(project,5,3);assert.equal(project.field.cells.length,15);assert.equal(project.field.cells[4],null);assert.equal(project.field.cells[5],grass);
+removeType(project,grass);assert.ok(project.field.cells.every(p=>p===null));
 const roundTrip=createProject();
 roundTrip.types[0].tiles[255]=Array(256).fill('#123456');
 const serialize=value=>JSON.stringify(value);
@@ -213,9 +217,10 @@ console.log('Atlas PNG checks passed: packed rows, ascending masks, no placehold
   const rgba=new Uint8Array(layout.width*layout.height*4), size=atlasProject.tileSize, water=metadata.types[1], tile=water.tiles[3];
   rgba.set([0x12,0x34,0x56,255],((tile.y*size+1)*layout.width+tile.x*size+2)*4);   // one opaque pixel at (2,1) of that tile
   const target=createProject(size);
+  target.types.forEach((type,index)=>{type.id=metadata.types[index].id;});
   const added=importAtlas(target,back,rgba,layout.width,layout.height);
   assert.equal(added.length,metadata.types.length);
-  assert.equal(added.map(t=>t.id).join(),'grass-2,water-2,path-2','ids stay unique against the existing types');
+  assert.equal(added.map(t=>t.id).join(),metadata.types.map(t=>t.id+'-2').join(),'ids stay unique against the existing types');
   assert.equal(added[1].styleBits,85);
   assert.equal(Object.keys(added[1].tiles).length,water.tiles.length);
   const pixels=added[1].tiles[tile.mask];

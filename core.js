@@ -242,15 +242,19 @@ function resolveCell(project, index) {
   });
   return { type, mask: patternMask(type.styleBits,raw), raw };
 }
+function typeId() {
+  return 'tileset-'+crypto.randomUUID();
+}
 function makeType(id, name, color, seed = false) {
   return { id, name, color, seed, styleBits:255, symmetry:7, centerFill:true, tiles:{} };
 }
 function createProject(tileSize = 16) {
   const rows = ['11111111','11122211','11222211','11221111','11331111','13311111','33311111','11111111'];
+  const types=[makeType(typeId(),'草地','#789563',true),makeType(typeId(),'水辺','#759eac',true),makeType(typeId(),'小道','#be9b6f',true)];
   return {
     format:'dot-map', version:2, name:'小さな世界', tileSize, palette:DEFAULT_PALETTE.slice(),
-    types:[makeType('grass','草地','#789563',true),makeType('water','水辺','#759eac',true),makeType('path','小道','#be9b6f',true)],
-    field:{width:8,height:8,cells:rows.join('').split('').map(c=>['grass','water','path'][Number(c)-1])},
+    types,
+    field:{width:8,height:8,cells:rows.join('').split('').map(c=>types[Number(c)-1].id)},
   };
 }
 function shiftColor(hex, amount) {

@@ -53,18 +53,25 @@ main{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .section-title span{font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN",Meiryo,sans-serif;font-size:11px;font-weight:400;letter-spacing:0;color:var(--muted)}
 .hint{color:var(--muted);font-size:11px;line-height:1.7;margin:10px 0 0}
 .type-list{display:grid;gap:0;margin-bottom:10px;border:1px solid var(--ink)}
-.type-button{justify-content:flex-start;padding:8px;text-align:left;min-width:0;border:0;border-bottom:1px solid var(--ink);border-radius:0;box-shadow:none}
+.type-button{position:relative;display:flex;align-items:center;gap:8px;width:100%;justify-content:flex-start;padding:8px;text-align:left;min-width:0;border:0;border-bottom:1px solid var(--ink);border-radius:0;box-shadow:none;background:transparent;cursor:pointer;font-size:12px}
 .type-list .type-button:last-child{border-bottom:0}
-.type-button[aria-pressed=true]{box-shadow:inset 3px 0 0 var(--red);color:var(--red);background:transparent}
-.type-button .type-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-.type-button small{font-size:11px;color:var(--muted)}
+.type-button:hover{background:#efe4d2}
+.type-button.dragging{opacity:.45}
+.type-button[aria-pressed=true]{box-shadow:inset 3px 0 0 var(--red);color:var(--red);font-weight:700}
+.type-button.drop-before::before,.type-button.drop-after::after{content:"";position:absolute;left:0;right:0;height:3px;background:var(--red);z-index:1}
+.type-button.drop-before::before{top:-2px}
+.type-button.drop-after::after{bottom:-2px}
+.type-button .type-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.type-rename{width:20px;height:20px;margin-right:auto;padding:1px;border:0;flex-shrink:0}
+.type-rename[hidden]{display:none}
+.type-rename svg{width:14px;height:14px}
+.type-name-input{flex:1;min-width:0;margin-right:auto;padding:2px 4px}
+.type-button small{font-size:11px;color:var(--muted);flex-shrink:0}
 .type-button[aria-pressed=true] small{color:var(--red)}
 .type-dot{width:10px;height:10px;border-radius:0;outline:1px solid var(--ink);flex-shrink:0}
 .type-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}
 .type-actions button:not(.icon){grid-column:1;min-width:0}
 .type-actions .icon{grid-column:2;grid-row:1/span 2;height:auto}
-.form-row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12px;margin:12px 0}
-.form-row input:not([type=color]){width:100%}
 .style-label{display:block;font-size:12px;margin:14px 0 6px;font-weight:600}
 .tools{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--ink)}
 .tool{height:42px;padding:8px 4px;border:0;border-right:1px solid var(--ink);border-bottom:1px solid var(--ink);border-radius:0;background:transparent;box-shadow:none}
@@ -258,7 +265,7 @@ dialog .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
 <main>
 <div class="workspace">
 <aside class="panel left-column" aria-label="マップチップと描画ツール">
-<section class="section"><h2 class="section-title">マップチップ <span id="type-count">3 種類</span></h2><div id="type-list" class="type-list"></div><div class="type-actions"><button id="add-type"><svg style="width:13px;height:13px"><use href="#i-plus"/></svg>種類を追加</button><button id="import-atlas" title="dot-map-atlas 対応表入りのPNGから種類を追加">PNGから追加</button><input type="file" id="atlas-file" accept=".png,image/png" hidden><button class="icon" id="delete-type" aria-label="選択中の種類を削除" title="選択中の種類を削除"><svg><use href="#i-trash"/></svg></button></div><label class="form-row"><input id="type-name" aria-label="マップチップ名" maxlength="40"></label><div class="style-label">接続スタイル</div><div class="style-presets"><button data-style-preset="255" title="辺と角">辺＋角</button><button data-style-preset="85" title="辺のみ">辺のみ</button><button data-style-preset="170" title="角のみ">角のみ</button></div><div class="direction-grid" role="group" aria-label="接続判定に使う方向"><label title="左上"><input type="checkbox" data-direction="7" aria-label="左上への接続"><span aria-hidden="true">↖</span></label><label title="上"><input type="checkbox" data-direction="0" aria-label="上への接続"><span aria-hidden="true">↑</span></label><label title="右上"><input type="checkbox" data-direction="1" aria-label="右上への接続"><span aria-hidden="true">↗</span></label><label title="左"><input type="checkbox" data-direction="6" aria-label="左への接続"><span aria-hidden="true">←</span></label><span class="direction-center" aria-hidden="true">●</span><label title="右"><input type="checkbox" data-direction="2" aria-label="右への接続"><span aria-hidden="true">→</span></label><label title="左下"><input type="checkbox" data-direction="5" aria-label="左下への接続"><span aria-hidden="true">↙</span></label><label title="下"><input type="checkbox" data-direction="4" aria-label="下への接続"><span aria-hidden="true">↓</span></label><label title="右下"><input type="checkbox" data-direction="3" aria-label="右下への接続"><span aria-hidden="true">↘</span></label></div><p class="hint" id="style-description"></p><div class="style-label">対称タイルの自動導出</div><div class="symmetry-options" role="group" aria-label="対称タイルに使う変換"><label><input type="checkbox" data-symmetry="1">左右反転</label><label><input type="checkbox" data-symmetry="2">上下反転</label><label><input type="checkbox" data-symmetry="4">回転</label><label><input type="checkbox" id="center-fill">中央タイルから埋める</label></div><p class="hint">未編集のタイルを、描いたタイルから自動で作ります。描き始めると独立します。光源を固定する場合は回転をオフに。</p></section>
+<section class="section"><h2 class="section-title">マップチップ <span id="type-count">3 種類</span></h2><div id="type-list" class="type-list"></div><div class="type-actions"><button id="add-type"><svg style="width:13px;height:13px"><use href="#i-plus"/></svg>種類を追加</button><button id="import-atlas" title="dot-map-atlas 対応表入りのPNGから種類を追加">PNGから追加</button><input type="file" id="atlas-file" accept=".png,image/png" hidden><button class="icon" id="delete-type" aria-label="選択中の種類を削除" title="選択中の種類を削除"><svg><use href="#i-trash"/></svg></button></div><div class="style-label">接続スタイル</div><div class="style-presets"><button data-style-preset="255" title="辺と角">辺＋角</button><button data-style-preset="85" title="辺のみ">辺のみ</button><button data-style-preset="170" title="角のみ">角のみ</button></div><div class="direction-grid" role="group" aria-label="接続判定に使う方向"><label title="左上"><input type="checkbox" data-direction="7" aria-label="左上への接続"><span aria-hidden="true">↖</span></label><label title="上"><input type="checkbox" data-direction="0" aria-label="上への接続"><span aria-hidden="true">↑</span></label><label title="右上"><input type="checkbox" data-direction="1" aria-label="右上への接続"><span aria-hidden="true">↗</span></label><label title="左"><input type="checkbox" data-direction="6" aria-label="左への接続"><span aria-hidden="true">←</span></label><span class="direction-center" aria-hidden="true">●</span><label title="右"><input type="checkbox" data-direction="2" aria-label="右への接続"><span aria-hidden="true">→</span></label><label title="左下"><input type="checkbox" data-direction="5" aria-label="左下への接続"><span aria-hidden="true">↙</span></label><label title="下"><input type="checkbox" data-direction="4" aria-label="下への接続"><span aria-hidden="true">↓</span></label><label title="右下"><input type="checkbox" data-direction="3" aria-label="右下への接続"><span aria-hidden="true">↘</span></label></div><p class="hint" id="style-description"></p><div class="style-label">対称タイルの自動導出</div><div class="symmetry-options" role="group" aria-label="対称タイルに使う変換"><label><input type="checkbox" data-symmetry="1">左右反転</label><label><input type="checkbox" data-symmetry="2">上下反転</label><label><input type="checkbox" data-symmetry="4">回転</label><label><input type="checkbox" id="center-fill">中央タイルから埋める</label></div><p class="hint">未編集のタイルを、描いたタイルから自動で作ります。描き始めると独立します。光源を固定する場合は回転をオフに。</p></section>
 <section class="section"><h2 class="section-title">ツール</h2><div class="tools">
 <button class="tool" data-tool="pen" aria-pressed="true" title="ペン (B)" aria-label="ペン"><svg><use href="#i-pen"/></svg><span>ペン</span></button>
 <button class="tool" data-tool="line" aria-pressed="false" title="直線 (L)" aria-label="直線"><svg><use href="#i-line"/></svg><span>直線</span></button>

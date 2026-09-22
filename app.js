@@ -7,7 +7,7 @@ const pngIO = EditorFileIO.createFileIO({id:'dot-map-atlas',description:'アト�
 const paletteIO = EditorFileIO.createFileIO({id:'dot-map-palette',description:'カラーパレット',accept:{'text/plain':['.hex']}});
 let fileTarget={handle:null,name:null}, fileBusy=false, downloadKind='project';
 let project = createProject();
-let selection = { typeId:'grass', mask:255, cell:9 };
+let selection = { typeId:project.types[0].id, mask:255, cell:9 };
 let tool='pen', lastDrawTool='pen', fieldTool='select', color='#628b53', brush=1, zoom=16, previewScale=2;
 let undoStack=[], redoStack=[], gesture=null, toastTimer, marquee=null, clipboard=null;
 let tileCards=new Map(), fieldButtons=[];
@@ -94,18 +94,72 @@ function usageCounts(typeId) {
     const match=resolveCell(project,index);counts.set(match.mask,(counts.get(match.mask)||0)+1);
   });return counts;
 }
+function renameType(row, type) {
+  const name=row.querySelector('.type-name'), input=document.createElement('input');
+  input.className='type-name-input';input.maxLength=40;input.value=type.name;input.setAttribute('aria-label','マップチップ名');
+  name.replaceWith(input);row.draggable=false;row.querySelector('.type-rename').hidden=true;
+  input.focus();input.select();
+  let done=false;
+  const finish=save=>{
+    if(done)return;done=true;
+    const value=input.value.trim()||'名前のないマップチップ';
+    if(!save||value===type.name){renderAll();return;}
+    change(()=>{const found=project.types.find(t=>t.id===type.id);if(found)found.name=value;});
+  };
+  input.onblur=()=>finish(true);
+  input.onkeydown=event=>{
+    event.stopPropagation();
+    if(event.key==='Enter'){event.preventDefault();finish(true);}
+    else if(event.key==='Escape'){event.preventDefault();finish(false);}
+  };
+  input.onclick=event=>event.stopPropagation();
+}
+let dragFrom=-1;
+function clearDropLine() {
+  document.querySelectorAll('.type-button').forEach(row=>row.classList.remove('drop-before','drop-after'));
+}
+function dropAt(event, index) {
+  const rect=event.currentTarget.getBoundingClientRect();
+  let to=event.clientY>rect.top+rect.height/2?index+1:index;
+  if(dragFrom<to)to-=1;
+  return to;
+}
+function showDropLine(event, row, index) {
+  clearDropLine();
+  const to=dropAt(event,index);
+  if(dragFrom<0||dragFrom===to)return;
+  row.classList.add(event.clientY>row.getBoundingClientRect().top+row.getBoundingClientRect().height/2?'drop-after':'drop-before');
+}
 function renderTypes() {
   $('type-list').replaceChildren();
   project.types.forEach((type,index)=>{
-    const button=document.createElement('button');button.className='type-button';button.dataset.type=type.id;button.setAttribute('aria-pressed',type.id===selection.typeId);
+    const row=document.createElement('div');row.className='type-button';row.dataset.type=type.id;row.draggable=true;row.tabIndex=0;row.setAttribute('aria-pressed',type.id===selection.typeId);
     const dot=document.createElement('span');dot.className='type-dot';dot.style.background=type.color;
     const name=document.createElement('span');name.className='type-name';name.textContent=type.name;
+    const edit=document.createElement('button');edit.type='button';edit.className='type-rename';edit.title='名前を編集';edit.setAttribute('aria-label',type.name+'の名前を編集');edit.innerHTML='<svg><use href="#i-pen"/></svg>';
     const number=document.createElement('small');number.textContent=String(index+1).padStart(2,'0');
-    button.append(dot,name,number);button.onclick=()=>{finishGesture();selection={typeId:type.id,mask:0,cell:null};renderAll();};
-    $('type-list').append(button);
+    edit.onclick=event=>{
+      event.stopPropagation();event.preventDefault();finishGesture();
+      if(selection.typeId!==type.id){selection={typeId:type.id,mask:0,cell:null};renderAll();}
+      renameType(document.querySelector(`[data-type="${CSS.escape(type.id)}"]`),type);
+    };
+    row.append(dot,name,edit,number);
+    row.onclick=()=>{finishGesture();selection={typeId:type.id,mask:0,cell:null};renderAll();};
+    row.onkeydown=event=>{if(event.target===row&&(event.key==='Enter'||event.key===' ')){event.preventDefault();row.click();}};
+    row.ondragstart=event=>{dragFrom=index;event.dataTransfer.setData('text/plain',type.id);event.dataTransfer.effectAllowed='move';row.classList.add('dragging');};
+    row.ondragend=()=>{dragFrom=-1;row.classList.remove('dragging');clearDropLine();};
+    row.ondragover=event=>{event.preventDefault();event.dataTransfer.dropEffect='move';showDropLine(event,row,index);};
+    row.ondragleave=event=>{if(!$('type-list').contains(event.relatedTarget))clearDropLine();};
+    row.ondrop=event=>{
+      event.preventDefault();
+      const to=dropAt(event,index),from=dragFrom;
+      clearDropLine();
+      if(from<0||from===to)return;
+      change(()=>{const [item]=project.types.splice(from,1);project.types.splice(to,0,item);});
+    };
+    $('type-list').append(row);
   });
   $('type-count').textContent=project.types.length+' 種類';
-  $('type-name').value=currentType().name;
   const bits=currentType().styleBits;
   document.querySelectorAll('[data-direction]').forEach(input=>input.checked=Boolean(bits & (1<<Number(input.dataset.direction))));
   document.querySelectorAll('[data-style-preset]').forEach(button=>button.setAttribute('aria-pressed',Number(button.dataset.stylePreset)===bits));
@@ -541,7 +595,7 @@ $('style-form').onsubmit=event=>{
 };
 $('add-type').onclick=()=>{
   if(project.types.length>=32)return;
-  change(()=>{const id='type-'+crypto.randomUUID();const type=makeType(id,'マップチップ '+(project.types.length+1),DEFAULT_PALETTE[(project.types.length*3)%DEFAULT_PALETTE.length]);project.types.push(type);selection={typeId:id,mask:0,cell:null};$('used-only').checked=false;});
+  change(()=>{const id=typeId();const type=makeType(id,'マップチップ '+(project.types.length+1),DEFAULT_PALETTE[(project.types.length*3)%DEFAULT_PALETTE.length]);project.types.push(type);selection={typeId:id,mask:0,cell:null};$('used-only').checked=false;});
   toast('新しい種類を追加しました。タイル一覧から描き始められます。');
 };
 $('import-atlas').onclick=()=>$('atlas-file').click();
@@ -566,7 +620,6 @@ $('delete-type').onclick=()=>{
   if(!confirm(`「${type.name}」とそのタイルを削除しますか？ 配置済みのマスは空になります。元に戻すことができます。`))return;
   change(()=>{removeType(project,type.id);selection={typeId:project.types[0].id,mask:0,cell:null};});
 };
-$('type-name').onchange=()=>{const value=$('type-name').value.trim();change(()=>currentType().name=value||'名前のないマップチップ');};
 document.querySelectorAll('[data-direction]').forEach(input=>input.onchange=()=>{
   const bits=[...document.querySelectorAll('[data-direction]:checked')].reduce((mask,el)=>mask|(1<<Number(el.dataset.direction)),0);changeStyle(bits);
 });
@@ -738,7 +791,7 @@ $('download-cancel').onclick=()=>$('download-dialog').close();
 $('download-form').onsubmit=event=>{event.preventDefault();const name=$('download-name').value;$('download-dialog').close();if(downloadKind==='png')exportPNG(name);else if(downloadKind==='palette')savePalette(name);else saveProject(true,name);};
 $('new-project').onclick=()=>{finishGesture();$('new-dialog').showModal();};$('cancel-new').onclick=()=>$('new-dialog').close();
 $('new-form').onsubmit=event=>{
-  event.preventDefault();change(()=>{project=createProject(Number($('new-size').value));fileTarget={handle:null,name:null};project.name=$('new-name').value.trim()||'無題の世界';project.types=[makeType('terrain','マップチップ 1','#789563')];project.field.cells.fill(null);selection={typeId:'terrain',mask:0,cell:null};$('used-only').checked=false;fit();});refreshFileControls();$('new-dialog').close();toast('新しいプロジェクトを作成しました');
+  event.preventDefault();change(()=>{const id=typeId();project=createProject(Number($('new-size').value));fileTarget={handle:null,name:null};project.name=$('new-name').value.trim()||'無題の世界';project.types=[makeType(id,'マップチップ 1','#789563')];project.field.cells.fill(null);selection={typeId:id,mask:0,cell:null};$('used-only').checked=false;fit();});refreshFileControls();$('new-dialog').close();toast('新しいプロジェクトを作成しました');
 };
 document.addEventListener('keydown',event=>{
   if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='s'&&!document.querySelector('dialog[open]')) {
