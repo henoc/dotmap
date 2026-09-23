@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import { deflateSync } from 'node:zlib';
 
 const core = readFileSync(new URL('./core.js', import.meta.url), 'utf8');
-const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, makeLayer, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, makeLayer, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM})', {TextEncoder, TextDecoder, crypto});
+const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, makeLayer, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, transformRect, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, makeLayer, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, transformRect, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM})', {TextEncoder, TextDecoder, crypto});
 const pixels = Array(64).fill(null);
 drawLine(pixels, 8, [0,0], [7,7], '#123456');
 assert.equal(pixels.filter(Boolean).length, 8, 'Fast diagonal strokes must be continuous');
@@ -304,6 +304,15 @@ transforms.forEach((transform,i)=>{
     assert.equal(transformMask(1<<bit,transform),1<<destination);
   });
 });
+const rect=['a','b','c','d','e',null];
+const flipX=transformRect(rect,2,3,'flipX'), flipY=transformRect(rect,2,3,'flipY'), turn=transformRect(rect,2,3,'rotate90');
+assert.equal(JSON.stringify(flipX),JSON.stringify({pixels:['b','a','d','c',null,'e'],w:2,h:3}));
+assert.equal(JSON.stringify(flipY),JSON.stringify({pixels:['e',null,'c','d','a','b'],w:2,h:3}));
+assert.equal(turn.w,3);assert.equal(turn.h,2);
+assert.equal(JSON.stringify(turn.pixels),JSON.stringify(['e','c','a',null,'d','b']));
+const back=transformRect(turn.pixels,turn.w,turn.h,'rotate270');
+assert.equal(back.w,2);assert.equal(back.h,3);
+assert.equal(JSON.stringify(back.pixels),JSON.stringify(rect));
 const symmetric=makeType('sym','対称','#123456');
 symmetric.symmetry=7;
 assert.equal(symmetryTransforms(symmetric).length,8);

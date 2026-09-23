@@ -111,7 +111,7 @@ main{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .tile-heading{font-size:12px;min-width:0}
 .tile-heading strong{font-family:var(--mincho);font-weight:600;font-size:18px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px}
 .tile-heading small{font-size:11px;color:var(--muted);display:block;margin-top:3px}
-.editor-controls{display:flex;gap:4px;align-items:center}
+.editor-controls{display:flex;gap:4px;align-items:center;flex-shrink:0}
 .editor-controls button[aria-pressed=true]{background:var(--red);color:#fff;box-shadow:none}
 .separator{height:18px;width:1px;background:var(--ink);margin:0 4px}
 .stage{height:382px;overflow:auto;display:flex;padding:28px;background-color:#f3ecdf;background-image:linear-gradient(#ddcfb8 1px,transparent 1px),linear-gradient(90deg,#ddcfb8 1px,transparent 1px);background-size:16px 16px;overscroll-behavior:contain}
@@ -122,6 +122,7 @@ canvas{image-rendering:pixelated}
 .canvas-wrap.inactive{opacity:.35;pointer-events:none}
 .grid-overlay{position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(to right,#1b140e33 1px,transparent 1px),linear-gradient(to bottom,#1b140e33 1px,transparent 1px)}
 #marquee{position:absolute;pointer-events:none;border:1px dashed var(--red);background:#c5362b22;z-index:1}
+#marquee canvas{width:100%;height:100%;display:block}
 #marquee[hidden]{display:none}
 .editor-bottom{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;font-size:11px;color:var(--muted);border-top:2px solid var(--ink)}
 .zoom{display:flex;align-items:center;gap:4px}
@@ -131,7 +132,6 @@ canvas{image-rendering:pixelated}
 .peering{display:grid;grid-template-columns:repeat(3,10px);grid-template-rows:repeat(3,10px);gap:0;flex-shrink:0;border:1px solid var(--ink)}
 .peering i{background:#e4d8c8}
 .peering i.on{background:var(--red)}
-.peering i.off{background:transparent;box-shadow:inset 0 0 0 1px var(--muted)}
 .selection-info p{font-size:12px;line-height:1.7;margin:0;color:var(--muted)}
 .selection-info strong{font-size:12px;color:var(--ink);font-weight:600}
 .tile-panel{border-top:2px solid var(--ink)}
@@ -206,7 +206,7 @@ dialog .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
 #tile-origin.derived{color:var(--red)}
 #bake-symmetry{font-size:12px}
 .tile-card.derived{border-style:dashed}
-.derived-badge{position:absolute;bottom:4px;right:3px;font-size:10px;line-height:1.3;color:var(--red);background:var(--paper);border:1px solid var(--red);border-radius:0;padding:0 2px}
+.derived-badge{position:absolute;bottom:22px;right:3px;font-size:10px;line-height:1.3;color:var(--red);background:var(--paper);border:1px solid var(--red);border-radius:0;padding:0 2px}
 .derived-badge[hidden]{display:none}
 @media(min-width:1450px){
   .workspace{grid-template-columns:280px minmax(400px,1fr) 340px}
@@ -260,6 +260,10 @@ dialog .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
 <symbol id="i-fill" viewBox="0 0 24 24"><path d="m10 3 9 9-8 8a2 2 0 0 1-3 0l-6-6a2 2 0 0 1 0-3l7-7M4 12h14M7 2l7 7M20 15s-3 3-3 5a3 3 0 0 0 6 0c0-2-3-5-3-5Z"/></symbol>
 <symbol id="i-picker" viewBox="0 0 24 24"><path d="m14 5 5 5M12 7l5 5M13 8 4 17v3h3l9-9M14 6l3-3a3 3 0 0 1 4 4l-3 3"/></symbol>
 <symbol id="i-select" viewBox="0 0 24 24"><path d="M5 9V5h4M15 5h4v4M19 15v4h-4M9 19H5v-4"/></symbol>
+<symbol id="i-flip-x" viewBox="0 0 24 24"><path d="m3 7 5 5-5 5V7M21 7l-5 5 5 5V7M12 2v2M12 8v2M12 14v2M12 20v2"/></symbol>
+<symbol id="i-flip-y" viewBox="0 0 24 24"><path d="m7 3 5 5 5-5H7M7 21l5-5 5 5H7M2 12h2M8 12h2M14 12h2M20 12h2"/></symbol>
+<symbol id="i-rotate-cw" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9c2.5 0 4.9 1 6.7 2.7L21 8M21 3v5h-5"/></symbol>
+<symbol id="i-rotate-ccw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.7 9.7 0 0 0-6.7 2.7L3 8M3 3v5h5"/></symbol>
 <symbol id="i-undo" viewBox="0 0 24 24"><path d="m8 5-5 5 5 5M3 10h10a7 7 0 0 1 7 7v2"/></symbol>
 <symbol id="i-redo" viewBox="0 0 24 24"><path d="m16 5 5 5-5 5M21 10H11a7 7 0 0 0-7 7v2"/></symbol>
 <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></symbol>
@@ -271,7 +275,7 @@ dialog .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
 <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></symbol>
 </defs></svg>
 <div class="sheet">
-<header><div class="brand"><span class="wordmark">マップチップエディタ</span></div><label class="project-title">ファイル名 <input id="filename" value="小さな世界" maxlength="80" aria-label="ファイル名"></label><div class="header-actions"><span class="saved" id="save-status" role="status">このブラウザに自動保存</span><button id="new-project"><svg><use href="#i-plus"/></svg>新規</button><button id="open-project">開く</button><button class="primary" id="save-project"><svg><use href="#i-download"/></svg>上書き保存</button><button id="save-project-as" title="Ctrl / ⌘ Shift S">名前を付けて保存…</button><input type="file" id="project-file" accept=".json,.dotmap,application/json" hidden></div></header>
+<header><div class="brand"><span class="wordmark">マップチップエディタ</span></div><label class="project-title">ファイル名 <input id="filename" value="Small World" maxlength="80" aria-label="ファイル名"></label><div class="header-actions"><span class="saved" id="save-status" role="status">このブラウザに自動保存</span><button id="new-project"><svg><use href="#i-plus"/></svg>新規</button><button id="open-project">開く</button><button class="primary" id="save-project"><svg><use href="#i-download"/></svg>上書き保存</button><button id="save-project-as" title="Ctrl / ⌘ Shift S">名前を付けて保存…</button><input type="file" id="project-file" accept=".json,.dotmap,application/json" hidden></div></header>
 <main>
 <div class="workspace">
 <aside class="panel left-column" aria-label="マップチップと描画ツール">
@@ -287,7 +291,7 @@ dialog .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
 <section class="section"><h2 class="section-title">カラーパレット <span id="palette-count">自然（既定） · 20色</span></h2><div class="color-current"><input type="color" id="color" value="#628b53" aria-label="描画色"><input id="hex" value="#628B53" maxlength="7" aria-label="カラーコード" spellcheck="false"></div><div class="swatches" id="palette" aria-label="プロジェクトのパレット"></div><div class="palette-actions"><button id="palette-add" title="現在の描画色を追加">＋ 追加</button><button id="palette-delete" title="選択中のスウォッチを削除">− 削除</button></div><div class="palette-actions"><button id="palette-import">読み込む</button><button id="palette-export">保存</button></div><button id="palette-snap" title="選択中のマップチップの実体タイルをパレット色へ寄せます。寄せ方を3通りから選べます">マップチップの色を寄せる</button><p class="hint">追加・削除・読み込みはパレットだけを変えます。ドットの色を変えるのは「マップチップの色を寄せる」です。</p></section>
 <section class="section keys"><kbd>B</kbd> ペン　<kbd>L</kbd> 直線<br><kbd>E</kbd> 消しゴム　<kbd>G</kbd> 塗りつぶし<br><kbd>I</kbd> スポイト　<kbd>M</kbd> 範囲選択<br><kbd>⌘ / Ctrl C V X</kbd> コピー／貼付／切取<br><kbd>⌘ / Ctrl A</kbd> 全体選択　<kbd>Esc</kbd> 選択解除　範囲外クリックでも解除<br><kbd>⌘ / Ctrl Z</kbd> 元に戻す<br><kbd>Alt + クリック</kbd> 色を拾う<br>範囲内ドラッグで移動</section>
 </aside>
-<section class="editor" aria-label="タイル編集"><div class="panel"><div class="editor-top"><div class="tile-heading"><strong id="tile-title"></strong><small id="tile-subtitle"></small></div><div class="editor-controls"><button class="icon" id="undo" aria-label="元に戻す" title="元に戻す (⌘/Ctrl Z)"><svg><use href="#i-undo"/></svg></button><button class="icon" id="redo" aria-label="やり直す" title="やり直す (⌘/Ctrl Shift Z)"><svg><use href="#i-redo"/></svg></button><div class="separator"></div><button class="icon" id="grid" aria-label="グリッド表示" title="グリッド表示" aria-pressed="true"><svg><use href="#i-grid"/></svg></button><button class="icon" id="clear" aria-label="選択タイルを未編集に戻す" title="選択タイルを未編集に戻す（実体を削除）"><svg><use href="#i-trash"/></svg></button></div></div><div class="stage" id="stage"><div class="canvas-wrap checker" id="canvas-wrap"><canvas id="canvas" width="16" height="16" aria-label="選択タイルのドット絵描画領域"></canvas><div class="grid-overlay" id="grid-overlay"></div><div id="marquee" hidden></div></div></div><div class="editor-bottom"><span id="canvas-info">16 × 16 px</span><span id="coordinates">X: —　Y: —</span><div class="zoom"><button id="zoom-out" aria-label="縮小"><svg><use href="#i-minus"/></svg></button><output id="zoom-label"></output><button id="zoom-in" aria-label="拡大"><svg><use href="#i-plus"/></svg></button></div></div><div class="symmetry-bar"><span id="tile-origin" role="status"></span><button id="bake-symmetry" title="未保存の対称タイルにだけコピーします。実体があるタイルは上書きしません。">対称タイルへ焼き込む</button></div><div class="selection-info"><div id="selected-peering" class="peering" aria-hidden="true"></div><p><strong id="shared-count"></strong><br><span id="selection-description"></span></p></div></div>
+<section class="editor" aria-label="タイル編集"><div class="panel"><div class="editor-top"><div class="tile-heading"><strong id="tile-title"></strong><small id="tile-subtitle"></small></div><div class="editor-controls"><button class="icon" id="undo" aria-label="元に戻す" title="元に戻す (⌘/Ctrl Z)"><svg><use href="#i-undo"/></svg></button><button class="icon" id="redo" aria-label="やり直す" title="やり直す (⌘/Ctrl Shift Z)"><svg><use href="#i-redo"/></svg></button><div class="separator"></div><button class="icon" id="flip-x" aria-label="左右反転" title="左右反転"><svg><use href="#i-flip-x"/></svg></button><button class="icon" id="flip-y" aria-label="上下反転" title="上下反転"><svg><use href="#i-flip-y"/></svg></button><button class="icon" id="rotate-cw" aria-label="右に90度" title="右に90度"><svg><use href="#i-rotate-cw"/></svg></button><button class="icon" id="rotate-ccw" aria-label="左に90度" title="左に90度"><svg><use href="#i-rotate-ccw"/></svg></button><div class="separator"></div><button class="icon" id="grid" aria-label="グリッド表示" title="グリッド表示" aria-pressed="true"><svg><use href="#i-grid"/></svg></button><button class="icon" id="clear" aria-label="選択タイルを未編集に戻す" title="選択タイルを未編集に戻す（実体を削除）"><svg><use href="#i-trash"/></svg></button></div></div><div class="stage" id="stage"><div class="canvas-wrap checker" id="canvas-wrap"><canvas id="canvas" width="16" height="16" aria-label="選択タイルのドット絵描画領域"></canvas><div class="grid-overlay" id="grid-overlay"></div><div id="marquee" hidden></div></div></div><div class="editor-bottom"><span id="canvas-info">16 × 16 px</span><span id="coordinates">X: —　Y: —</span><div class="zoom"><button id="zoom-out" aria-label="縮小"><svg><use href="#i-minus"/></svg></button><output id="zoom-label"></output><button id="zoom-in" aria-label="拡大"><svg><use href="#i-plus"/></svg></button></div></div><div class="symmetry-bar"><span id="tile-origin" role="status"></span><button id="bake-symmetry" title="未保存の対称タイルにだけコピーします。実体があるタイルは上書きしません。">対称タイルへ焼き込む</button></div><div class="selection-info"><div id="selected-peering" class="peering" aria-hidden="true"></div><p><strong id="shared-count"></strong><br><span id="selection-description"></span></p></div></div>
 <div class="panel tile-panel"><h2 class="section-title">タイル一覧 <span id="tile-count"></span></h2><div class="tile-filter"><span>接続パターンから直接編集</span><label><input type="checkbox" id="used-only">使用中のみ</label></div><div id="tile-list" class="tile-list"></div><div class="tile-footnote">右上の数字：使用マス数 ／ 朱の点：実体 ／ 導出：反転・回転で自動表示</div></div>
 </section>
 <aside class="right-column" aria-label="サンプルフィールド">

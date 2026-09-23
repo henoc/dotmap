@@ -32,17 +32,18 @@ function normalizeSelection() {
   if(!patterns(currentType().styleBits).includes(selection.mask)) selection.mask=0;
 }
 // Snapshots of the same document share its latest save target; open/new creates another target.
-function snapshot() { return {project:clone(project),selection:{...selection},fileTarget}; }
+function snapshot() { return {project:clone(project),selection:{...selection},fileTarget,marquee:marquee&&clone(marquee)}; }
 function persist() {
   try { localStorage.setItem(storageKey,JSON.stringify(project));$('save-status').textContent='このブラウザに保存済み'; }
   catch { $('save-status').textContent='自動保存できません';toast('自動保存できません。「上書き保存」または「名前を付けて保存」でファイルに残してください。'); }
 }
 function commit(before, rebuild=true) {
-  if(before.fileTarget!==fileTarget || JSON.stringify(before.project)!==JSON.stringify(project)) {
+  const saved=before.fileTarget!==fileTarget || JSON.stringify(before.project)!==JSON.stringify(project);
+  if(saved || JSON.stringify(before.marquee)!==JSON.stringify(marquee)) {
     undoStack.push(before);
     // ponytail: 40 whole-project snapshots; switch to pixel deltas for much larger projects.
     if(undoStack.length>40) undoStack.shift();
-    redoStack=[];persist();
+    redoStack=[];if(saved)persist();
   }
   if(rebuild) renderAll(); else renderGraphics();
 }
@@ -54,7 +55,7 @@ function history(direction) {
   const from=direction==='undo'?undoStack:redoStack,to=direction==='undo'?redoStack:undoStack;
   if(!from.length)return;
   to.push(snapshot());const state=from.pop();project=state.project;selection=state.selection;
-  fileTarget=state.fileTarget;refreshFileControls();
+  fileTarget=state.fileTarget;marquee=state.marquee||null;refreshFileControls();
   persist();renderAll();
 }
 function toast(message) {
@@ -88,8 +89,7 @@ function peering(element, styleBits, mask) {
   element.replaceChildren();
   bits.forEach(bit=>{
     const cell=document.createElement('i');
-    if(bit===-1||Boolean(mask&bit))cell.className='on';
-    if(bit!==-1&&!(styleBits&bit))cell.className='off';
+    if((bit===-1||styleBits&bit)&&(bit===-1||mask&bit))cell.className='on';
     element.append(cell);
   });
 }
@@ -286,6 +286,7 @@ function renderGraphics() {
   $('canvas-info').textContent=`${size} × ${size} px`;$('zoom-label').textContent=zoom*100+'%';
   $('zoom-out').disabled=zoom<=2;$('zoom-in').disabled=zoom>=32;
   $('undo').disabled=!undoStack.length;$('redo').disabled=!redoStack.length;$('clear').disabled=!match||!Object.hasOwn(match.type.tiles,match.mask);
+  for(const id of ['flip-x','flip-y','rotate-cw','rotate-ccw']) $(id).disabled=!match;
   const counts=usageCounts(currentType().id), list=patterns(currentType().styleBits);
   for(const [mask,card] of tileCards) {
     const derived=derivedTile(currentType(),mask);
@@ -305,7 +306,6 @@ function renderGraphics() {
   const targets=match?symmetryTargets(match.type,match.mask).size:0;
   $('bake-symmetry').disabled=!targets;
   $('bake-symmetry').textContent=`対称タイルへ焼き込む${targets?`（${targets}枚）`:''}`;
-  if(marquee&&(marquee.x+marquee.w<=0||marquee.y+marquee.h<=0||marquee.x>=project.tileSize||marquee.y>=project.tileSize))marquee=null;
   updateMarquee();
   $('shared-count').textContent=match?`${counts.get(match.mask)||0} マスがこのタイルを共有`:'このマスにはタイルがありません';
   $('selection-description').textContent=selection.cell!==null?`選択：列 ${selection.cell%project.field.width+1}・行 ${Math.floor(selection.cell/project.field.width)+1} ／ 同じ接続パターンへ一括反映`:'タイル一覧から選択中 ／ 未使用のパターンも編集できます';
@@ -383,7 +383,7 @@ function updateMarquee() {
   const el=$('marquee'), rect=gesture?.kind==='marquee'||gesture?.kind==='move'?gesture.rect:marquee;
   const show=Boolean(rect&&selectedTile());
   el.hidden=!show;
-  if(!show)return;
+  if(!show){const preview=el.querySelector('canvas');if(preview)preview.remove();return;}
   el.style.left=rect.x*zoom+'px';el.style.top=rect.y*zoom+'px';
   el.style.width=rect.w*zoom+'px';el.style.height=rect.h*zoom+'px';
   const pixels=gesture?.kind==='marquee'?null:gesture?.kind==='move'?gesture.data||gesture.pixels:marquee?.pixels;
@@ -469,6 +469,27 @@ async function pasteMarquee() {
   change(()=>stampRect(editablePixels(match),size,clip.pixels,x,y,clip.w,clip.h));
   marquee={x,y,w:clip.w,h:clip.h,pixels:clip.pixels.slice(),ground};
   setTool('select');updateMarquee();
+}
+function transformSelection(kind) {
+  const match=selectedTile();if(!match)return;
+  const size=project.tileSize;
+  if(!marquee) {
+    change(()=>{
+      const pixels=editablePixels(match), next=transformRect(pixels,size,size,kind);
+      for(let i=0;i<pixels.length;i++)pixels[i]=next.pixels[i];
+    });
+    return;
+  }
+  const rect=marquee, source=(rect.pixels||extractRect(tilePixels(match.type,size,match.mask),size,rect)).slice();
+  const next=transformRect(source,rect.w,rect.h,kind);
+  const x=rect.x+Math.floor((rect.w-next.w)/2), y=rect.y+Math.floor((rect.h-next.h)/2);
+  change(()=>{
+    const pixels=editablePixels(match);
+    if(rect.ground) for(let i=0;i<pixels.length;i++)pixels[i]=rect.ground[i];
+    else stampRect(pixels,size,null,rect.x,rect.y,rect.w,rect.h);
+    stampRect(pixels,size,next.pixels,x,y,next.w,next.h);
+    marquee={x,y,w:next.w,h:next.h,pixels:next.pixels.slice(),ground:rect.ground};
+  });
 }
 function eraseMarquee() {
   const match=selectedTile();if(!match||!marquee)return;
@@ -722,6 +743,7 @@ $('clear').onclick=()=>{
   change(()=>{delete match.type.tiles[match.mask];});
 };
 $('undo').onclick=()=>history('undo');$('redo').onclick=()=>history('redo');
+for(const [id,kind] of [['flip-x','flipX'],['flip-y','flipY'],['rotate-cw','rotate90'],['rotate-ccw','rotate270']]) $(id).onclick=()=>transformSelection(kind);
 $('used-only').onchange=()=>{renderTileList();renderGraphics();};
 $('grid').onclick=()=>{const visible=$('grid').getAttribute('aria-pressed')!=='true';$('grid').setAttribute('aria-pressed',visible);$('grid-overlay').hidden=!visible;};
 $('zoom-in').onclick=()=>{zoom=Math.min(32,zoom+2);renderGraphics();};$('zoom-out').onclick=()=>{zoom=Math.max(2,zoom-2);renderGraphics();};

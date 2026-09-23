@@ -150,6 +150,20 @@ function transformPixels(pixels, size, transform) {
   for(let y=0;y<size;y++)for(let x=0;x<size;x++)result[(c*x+d*y+oy)*size+a*x+b*y+ox]=pixels[y*size+x];
   return result;
 }
+function transformRect(pixels, w, h, kind) {
+  const out=[];
+  if(kind==='flipX') {
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++)out.push(pixels[y*w+(w-1-x)]);
+    return {pixels:out,w,h};
+  }
+  if(kind==='flipY') {
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++)out.push(pixels[(h-1-y)*w+x]);
+    return {pixels:out,w,h};
+  }
+  const cw=kind==='rotate90';
+  for(let y=0;y<w;y++)for(let x=0;x<h;x++)out.push(pixels[(cw?h-1-x:x)*w+(cw?y:w-1-y)]);
+  return {pixels:out,w:h,h:w};
+}
 // symmetry bits: 1 = horizontal reflection, 2 = vertical reflection, 4 = quarter turns.
 function supportedSymmetry(styleBits) {
   return [1,2,3].reduce((bits,index,i)=>bits | (transformMask(styleBits,TILE_TRANSFORMS[index])===styleBits ? 1<<i : 0),0);
@@ -258,7 +272,7 @@ function createProject(tileSize = 16) {
   const rows = ['11111111','11122211','11222211','11221111','11331111','13311111','33311111','11111111'];
   const types=[makeType(typeId(),'草地','#789563',true),makeType(typeId(),'水辺','#759eac',true),makeType(typeId(),'小道','#be9b6f',true)];
   return {
-    format:'dot-map', version:3, name:'小さな世界', tileSize, palette:DEFAULT_PALETTE.slice(),
+    format:'dot-map', version:3, name:'world', tileSize, palette:DEFAULT_PALETTE.slice(),
     types,
     field:{width:8,height:8,layers:[makeLayer('レイヤー 1',rows.join('').split('').map(c=>types[Number(c)-1].id))]},
   };
