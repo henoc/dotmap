@@ -313,6 +313,7 @@ function renderGraphics() {
   refreshFieldGrid(match);
   drawMap($('map-preview'));
   $('map-preview').style.width=project.field.width*size*previewScale+'px';$('map-preview').style.height=project.field.height*size*previewScale+'px';
+  $('map-grid').style.backgroundSize=`${size*previewScale}px ${size*previewScale}px`;
   $('field-dimensions').textContent=`${project.field.width} × ${project.field.height} マス`;
   updateExportInfo();
 }
@@ -539,8 +540,8 @@ canvas.addEventListener('pointerdown',event=>{
   const point=pointOnCanvas(event),match=selectedTile();if(!match||!inside(point))return;event.preventDefault();
   if(tool==='picker'||event.altKey) {
     const value=tilePixels(match.type,project.tileSize,match.mask)[point[1]*project.tileSize+point[0]];
-    if(value){setColor(value);if(tool==='picker')setTool(lastDrawTool);}
-    else toast('ここは透明です');
+    if(value){setColor(value);if(!drawTools.has(tool))setTool(lastDrawTool);}
+    else setTool('eraser');
     return;
   }
   if(tool==='select') {
@@ -746,6 +747,7 @@ $('undo').onclick=()=>history('undo');$('redo').onclick=()=>history('redo');
 for(const [id,kind] of [['flip-x','flipX'],['flip-y','flipY'],['rotate-cw','rotate90'],['rotate-ccw','rotate270']]) $(id).onclick=()=>transformSelection(kind);
 $('used-only').onchange=()=>{renderTileList();renderGraphics();};
 $('grid').onclick=()=>{const visible=$('grid').getAttribute('aria-pressed')!=='true';$('grid').setAttribute('aria-pressed',visible);$('grid-overlay').hidden=!visible;};
+$('map-grid-toggle').onclick=()=>{const visible=$('map-grid-toggle').getAttribute('aria-pressed')!=='true';$('map-grid-toggle').setAttribute('aria-pressed',visible);$('map-grid').hidden=!visible;};
 $('zoom-in').onclick=()=>{zoom=Math.min(32,zoom+2);renderGraphics();};$('zoom-out').onclick=()=>{zoom=Math.max(2,zoom-2);renderGraphics();};
 $('export').onclick=()=>exportPNG();
 $('color').oninput=event=>setColor(event.target.value);
