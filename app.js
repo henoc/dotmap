@@ -107,8 +107,17 @@ function renameType(row, type) {
     change(()=>{const found=project.types.find(t=>t.id===type.id);if(found)found.name=value;});
   };
   input.onblur=()=>finish(true);
+  input.addEventListener('compositionend',()=>{
+    const swallow=event=>{
+      input.removeEventListener('keydown',swallow,true);
+      if(event.key==='Enter'||event.key==='Escape'){event.preventDefault();event.stopPropagation();}
+    };
+    input.addEventListener('keydown',swallow,true);
+    setTimeout(()=>input.removeEventListener('keydown',swallow,true));
+  });
   input.onkeydown=event=>{
     event.stopPropagation();
+    if(event.isComposing||event.keyCode===229)return;
     if(event.key==='Enter'){event.preventDefault();finish(true);}
     else if(event.key==='Escape'){event.preventDefault();finish(false);}
   };
