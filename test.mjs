@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import { deflateSync } from 'node:zlib';
 
 const core = readFileSync(new URL('./core.js', import.meta.url), 'utf8');
-const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, makeLayer, layerGrid, setLayerOffset, layerCellOrigin, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, transformRect, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, makeLayer, layerGrid, setLayerOffset, layerCellOrigin, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, transformRect, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM})', {TextEncoder, TextDecoder, crypto});
+const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, makeLayer, layerGrid, setLayerOffset, layerCellOrigin, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, shadeStep, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, transformRect, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, makeLayer, layerGrid, setLayerOffset, layerCellOrigin, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, shadeStep, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, transformRect, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM})', {TextEncoder, TextDecoder, crypto});
 const pixels = Array(64).fill(null);
 drawLine(pixels, 8, [0,0], [7,7], '#123456');
 assert.equal(pixels.filter(Boolean).length, 8, 'Fast diagonal strokes must be continuous');
@@ -13,6 +13,9 @@ for (let i=0; i<8; i++) assert.equal(pixels[i*8+i], '#123456');
 floodFill(pixels, 8, 0, 7, '#abcdef');
 assert.equal(pixels[7*8], '#abcdef');
 assert.equal(pixels[7], null, 'Fill must not cross diagonal boundary');
+const painted=Array(4).fill('#628b53');
+drawLine(painted,2,[0,0],[1,0],index=>index? '#95b578':'#526449');
+assert.equal(painted[0],'#526449');assert.equal(painted[1],'#95b578');
 assert.equal(pixels.filter(p=>p==='#abcdef').length, 28);
 floodFill(pixels, 8, 0, 7, '#abcdef');
 assert.equal(pixels.filter(p=>p==='#abcdef').length, 28, 'Same-color fill terminates');
@@ -191,6 +194,15 @@ lumaType.tiles={1:['#00ff00',null]};
 snapTypeToPalette(lumaType,['#ffffff','#007700'],'luma');
 assert.equal(lumaType.color,'#ffffff');
 assert.equal(lumaType.tiles[1][0],'#ffffff');
+assert.equal(shadeStep('#628b53',DEFAULT_PALETTE,1),'#95b578');
+assert.equal(shadeStep('#628b53',DEFAULT_PALETTE,-1),'#526449');
+assert.equal(shadeStep('#c7d7a9',DEFAULT_PALETTE,1),'#c7d7a9');
+assert.equal(shadeStep('#283b34',DEFAULT_PALETTE,-1),'#283b34');
+assert.equal(shadeStep(null,DEFAULT_PALETTE,1),null);
+assert.equal(shadeStep('#5f889f',DEFAULT_PALETTE,1),'#8fb4c0');
+assert.notEqual(shadeStep('#5f889f',DEFAULT_PALETTE,1),'#95b578');
+const between=shadeStep('#70a060',DEFAULT_PALETTE,1);
+assert.equal(between,'#95b578');
 console.log('Palette checks passed: mixed HEX/ARGB/RGB, bounds, ordering, PNG RGB pixels, duplicate handling, fresh defaults, JSON round-trip, fallback and empty palettes, presets, hex export, nearest-color snap, Lab vs RGB, luma snap.');
 
 

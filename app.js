@@ -8,7 +8,7 @@ const paletteIO = EditorFileIO.createFileIO({id:'dot-map-palette',description:'�
 let fileTarget={handle:null,name:null}, fileBusy=false, downloadKind='project';
 let project = createProject();
 let selection = { typeId:project.types[0].id, mask:255, cell:9, layerId:project.field.layers[0].id };
-let tool='pen', lastDrawTool='pen', fieldTool='select', color='#628b53', brush=1, zoom=16, previewScale=2;
+let tool='pen', lastDrawTool='pen', shade=0, fieldTool='select', color='#628b53', brush=1, zoom=16, previewScale=2;
 let undoStack=[], redoStack=[], gesture=null, toastTimer, marquee=null, clipboard=null;
 let tileCards=new Map(), fieldButtons=[];
 let paletteIndex=2, importedPalette=[], paletteReadId=0, exporting=false, pendingStyleChange=null, snapMode='rgb';
@@ -371,6 +371,11 @@ async function readPalettePNG(file) {
   } finally {URL.revokeObjectURL(url);}
 }
 const drawTools=new Set(['pen','line','fill']);
+function ink(base) {
+  if(tool==='eraser')return null;
+  if(!shade||!drawTools.has(tool))return color;
+  return index=>shadeStep(base[index],project.palette,shade);
+}
 function setTool(value) {
   finishGesture();
   if(drawTools.has(value))lastDrawTool=value;
@@ -563,18 +568,20 @@ canvas.addEventListener('pointerdown',event=>{
   }
   const before=snapshot();
   if(tool==='fill') {
-    if(tilePixels(match.type,project.tileSize,match.mask)[point[1]*project.tileSize+point[0]]===color)return;
-    floodFill(editablePixels(match),project.tileSize,...point,color);commit(before,false);return;
+    const source=tilePixels(match.type,project.tileSize,match.mask)[point[1]*project.tileSize+point[0]];
+    const paint=shade?shadeStep(source,project.palette,shade):color;
+    if(source===paint)return;
+    floodFill(editablePixels(match),project.tileSize,...point,paint);commit(before,false);return;
   }
-  const pixels=editablePixels(match);
+  const pixels=editablePixels(match), base=pixels.slice();
   if(tool==='line') {
-    gesture={kind:'line',pointerId:event.pointerId,element:canvas,before,start:point,match,base:pixels.slice()};
+    gesture={kind:'line',pointerId:event.pointerId,element:canvas,before,start:point,match,base};
     canvas.setPointerCapture(event.pointerId);
-    drawLine(pixels,project.tileSize,point,point,color,brush);renderGraphics();
+    drawLine(pixels,project.tileSize,point,point,ink(base),brush);renderGraphics();
     return;
   }
-  gesture={kind:'pixel',pointerId:event.pointerId,element:canvas,before,previous:point,match};canvas.setPointerCapture(event.pointerId);
-  drawLine(pixels,project.tileSize,point,point,tool==='eraser'?null:color,brush);renderGraphics();
+  gesture={kind:'pixel',pointerId:event.pointerId,element:canvas,before,previous:point,match,base};canvas.setPointerCapture(event.pointerId);
+  drawLine(pixels,project.tileSize,point,point,ink(base),brush);renderGraphics();
 });
 canvas.addEventListener('pointermove',event=>{
   const point=pointOnCanvas(event),valid=inside(point);$('coordinates').textContent=valid?`X: ${point[0]}　Y: ${point[1]}`:'X: —　Y: —';
@@ -588,12 +595,12 @@ canvas.addEventListener('pointermove',event=>{
     const size=project.tileSize, end=valid?point:[Math.max(0,Math.min(size-1,point[0])),Math.max(0,Math.min(size-1,point[1]))];
     const pixels=editablePixels(gesture.match);
     for(let i=0;i<pixels.length;i++)pixels[i]=gesture.base[i];
-    drawLine(pixels,size,gesture.start,end,color,brush);renderGraphics();
+    drawLine(pixels,size,gesture.start,end,ink(gesture.base),brush);renderGraphics();
     return;
   }
   if(gesture.kind!=='pixel')return;
   if(!valid){gesture.previous=null;return;}
-  drawLine(editablePixels(gesture.match),project.tileSize,gesture.previous||point,point,tool==='eraser'?null:color,brush);gesture.previous=point;renderGraphics();
+  drawLine(editablePixels(gesture.match),project.tileSize,gesture.previous||point,point,ink(gesture.base),brush);gesture.previous=point;renderGraphics();
 });
 function fieldCellAt(event) {
   const target=document.elementFromPoint(event.clientX,event.clientY)?.closest('[data-cell]');
@@ -856,6 +863,7 @@ async function savePalette(downloadName=null) {
 $('palette-export').onclick=()=>savePalette();
 document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>setTool(b.dataset.tool));
 document.querySelectorAll('[data-field-tool]').forEach(b=>b.onclick=()=>setFieldTool(b.dataset.fieldTool));
+document.querySelectorAll('[data-shade]').forEach(b=>b.onclick=()=>{finishGesture();shade=Number(b.dataset.shade);document.querySelectorAll('[data-shade]').forEach(el=>el.setAttribute('aria-pressed',el===b));});
 document.querySelectorAll('[data-size]').forEach(b=>b.onclick=()=>{finishGesture();brush=Number(b.dataset.size);$('brush-label').textContent=brush+' px';document.querySelectorAll('[data-size]').forEach(el=>el.setAttribute('aria-pressed',el===b));});
 document.querySelectorAll('[data-preview]').forEach(b=>b.onclick=()=>{previewScale=Number(b.dataset.preview);document.querySelectorAll('[data-preview]').forEach(el=>el.setAttribute('aria-pressed',el===b));renderGraphics();});
 document.querySelectorAll('[data-preview-bg]').forEach(b=>b.onclick=()=>{

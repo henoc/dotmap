@@ -76,6 +76,28 @@ function lumaDistance(a, b) {
   return d*d;
 }
 function nearestLumaColor(hex, palette) { return nearestBy(hex,palette,lumaDistance); }
+function shadeStep(hex, palette, direction) {
+  if(!hex||!palette.length||!direction)return hex;
+  const chroma=([,a,b])=>Math.hypot(a,b), hueOf=([,a,b])=>Math.atan2(b,a);
+  const src=rgbToLab(hex), srcC=chroma(src);
+  const same=other=>{
+    const lab=rgbToLab(other), c=chroma(lab);
+    if(srcC<8&&c<8)return true;
+    if(srcC<8||c<8)return false;
+    let d=Math.abs(hueOf(src)-hueOf(lab));if(d>Math.PI)d=Math.PI*2-d;
+    return d<=(Math.min(srcC,c)<15?0.7:0.45);
+  };
+  const group=palette.filter(same).sort((a,b)=>rgbToLab(a)[0]-rgbToLab(b)[0]);
+  if(!group.length)return hex;
+  const index=group.findIndex(c=>c.toLowerCase()===hex.toLowerCase());
+  if(index<0){
+    const L=src[0];
+    if(direction>0)return group.find(c=>rgbToLab(c)[0]>L+0.5)||hex;
+    for(let i=group.length-1;i>=0;i--)if(rgbToLab(group[i])[0]<L-0.5)return group[i];
+    return hex;
+  }
+  return group[index+direction]||hex;
+}
 function snapTypeToPalette(type, palette, mode='rgb') {
   if(!palette.length)return;
   const mapColor=mode==='lab'?hex=>nearestLabColor(hex,palette):mode==='luma'?hex=>nearestLumaColor(hex,palette):hex=>nearestPaletteColor(hex,palette);
@@ -95,7 +117,10 @@ function drawLine(pixels, size, from, to, color, brush = 1) {
     const offset = Math.floor((brush-1)/2);
     for (let by = 0; by < brush; by++) for (let bx = 0; bx < brush; bx++) {
       const px = x + bx-offset, py = y + by-offset;
-      if (px >= 0 && py >= 0 && px < size && py < size) pixels[py*size+px] = color;
+      if (px >= 0 && py >= 0 && px < size && py < size) {
+        const index=py*size+px;
+        pixels[index]=typeof color==='function'?color(index):color;
+      }
     }
     if (x === tx && y === ty) break;
     const e2 = 2*error;
