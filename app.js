@@ -864,6 +864,30 @@ $('palette-export').onclick=()=>savePalette();
 document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>setTool(b.dataset.tool));
 document.querySelectorAll('[data-field-tool]').forEach(b=>b.onclick=()=>setFieldTool(b.dataset.fieldTool));
 document.querySelectorAll('[data-shade]').forEach(b=>b.onclick=()=>{finishGesture();shade=Number(b.dataset.shade);document.querySelectorAll('[data-shade]').forEach(el=>el.setAttribute('aria-pressed',el===b));});
+{
+  const handle=$('field-resize'), workspace=handle.closest('.workspace'), column=handle.parentElement;
+  const apply=width=>{
+    const bounds=workspace.getBoundingClientRect(), left=workspace.children[0].getBoundingClientRect().width;
+    workspace.style.setProperty('--field-pane', Math.round(Math.max(240, Math.min(bounds.width-left-280, width)))+'px');
+  };
+  handle.onpointerdown=event=>{
+    if(event.button!==0)return;
+    event.preventDefault();
+    const startX=event.clientX, start=column.getBoundingClientRect().width;
+    handle.classList.add('dragging');handle.setPointerCapture(event.pointerId);
+    handle.onpointermove=ev=>{if(ev.pointerId===event.pointerId)apply(start+startX-ev.clientX);};
+    const stop=ev=>{
+      if(ev.pointerId!==event.pointerId)return;
+      handle.classList.remove('dragging');handle.onpointermove=handle.onpointerup=handle.onpointercancel=null;
+    };
+    handle.onpointerup=handle.onpointercancel=stop;
+  };
+  handle.onkeydown=event=>{
+    if(event.key!=='ArrowLeft'&&event.key!=='ArrowRight')return;
+    event.preventDefault();
+    apply(column.getBoundingClientRect().width+(event.key==='ArrowLeft'?32:-32));
+  };
+}
 document.querySelectorAll('[data-size]').forEach(b=>b.onclick=()=>{finishGesture();brush=Number(b.dataset.size);$('brush-label').textContent=brush+' px';document.querySelectorAll('[data-size]').forEach(el=>el.setAttribute('aria-pressed',el===b));});
 document.querySelectorAll('[data-preview]').forEach(b=>b.onclick=()=>{previewScale=Number(b.dataset.preview);document.querySelectorAll('[data-preview]').forEach(el=>el.setAttribute('aria-pressed',el===b));renderGraphics();});
 document.querySelectorAll('[data-preview-bg]').forEach(b=>b.onclick=()=>{
