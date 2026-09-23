@@ -243,16 +243,20 @@ function setStyleBits(type, styleBits) {
   for(const mask of discardedMasks(type,styleBits))delete type.tiles[mask];
   type.styleBits=styleBits;
 }
+function layerGrid(field, offset) {
+  const x=offset&&Number.isInteger(offset.x)?offset.x:0, y=offset&&Number.isInteger(offset.y)?offset.y:0;
+  return {x,y,cols:field.width+(x?1:0),rows:field.height+(y?1:0),padX:x>0?1:0,padY:y>0?1:0};
+}
 function resolveCell(project, index, layer = project.field.layers[0]) {
-  const { width, height } = project.field, cells = layer.cells;
+  const grid=layerGrid(project.field, layer.offset), cells=layer.cells;
   if (index < 0 || index >= cells.length) return null;
   const type = project.types.find(t => t.id === cells[index]);
   if (!type) return null;
-  const x = index % width, y = Math.floor(index / width);
+  const x = index % grid.cols, y = Math.floor(index / grid.cols);
   let raw = 0;
   NEIGHBORS.forEach(([dx,dy], bit) => {
     const nx=x+dx, ny=y+dy;
-    if(nx>=0 && nx<width && ny>=0 && ny<height && cells[ny*width+nx]===type.id) raw |= 1<<bit;
+    if(nx>=0 && nx<grid.cols && ny>=0 && ny<grid.rows && cells[ny*grid.cols+nx]===type.id) raw |= 1<<bit;
   });
   return { type, mask: patternMask(type.styleBits,raw), raw };
 }
@@ -263,7 +267,22 @@ function fieldLayerId() {
   return 'field-layer-'+crypto.randomUUID();
 }
 function makeLayer(name, cells, id = fieldLayerId()) {
-  return { id, name, visible:true, cells };
+  return { id, name, visible:true, cells, offset:{x:0,y:0} };
+}
+function setLayerOffset(layer, field, x, y) {
+  const prev=layerGrid(field, layer.offset), next=layerGrid(field, {x,y});
+  if(prev.x===next.x&&prev.y===next.y) return;
+  const cells=Array(next.cols*next.rows).fill(null);
+  for(let i=0;i<layer.cells.length;i++) {
+    const fx=i%prev.cols-prev.padX, fy=Math.floor(i/prev.cols)-prev.padY;
+    const col=fx+next.padX, row=fy+next.padY;
+    if(col>=0&&col<next.cols&&row>=0&&row<next.rows) cells[row*next.cols+col]=layer.cells[i];
+  }
+  layer.offset={x:next.x,y:next.y};layer.cells=cells;
+}
+function layerCellOrigin(field, layer, index, tileSize) {
+  const grid=layerGrid(field, layer.offset), col=index%grid.cols, row=Math.floor(index/grid.cols);
+  return {x:(col-grid.padX)*tileSize+grid.x,y:(row-grid.padY)*tileSize+grid.y};
 }
 function makeType(id, name, color, seed = false) {
   return { id, name, color, seed, styleBits:255, symmetry:7, centerFill:true, tiles:{} };
@@ -300,10 +319,18 @@ function tilePixels(type, tileSize, mask) {
 }
 function resizeField(project, width, height) {
   const old=project.field;
-  project.field={width,height,layers:old.layers.map(layer=>({...layer,cells:Array.from({length:width*height},(_,i)=>{
-    const x=i%width,y=Math.floor(i/width);
-    return x<old.width&&y<old.height?layer.cells[y*old.width+x]:null;
-  })}))};
+  project.field={width,height,layers:old.layers.map(layer=>{
+    const prev=layerGrid(old, layer.offset), next=layerGrid({width,height}, layer.offset);
+    const cells=Array(next.cols*next.rows).fill(null);
+    for(let i=0;i<layer.cells.length;i++) {
+      let fx=i%prev.cols-prev.padX, fy=Math.floor(i/prev.cols)-prev.padY;
+      if(fx===old.width) fx=width;
+      if(fy===old.height) fy=height;
+      const col=fx+next.padX, row=fy+next.padY;
+      if(col>=0&&col<next.cols&&row>=0&&row<next.rows) cells[row*next.cols+col]=layer.cells[i];
+    }
+    return {...layer,offset:{x:prev.x,y:prev.y},cells};
+  })};
 }
 function removeType(project, id) {
   project.types=project.types.filter(t=>t.id!==id);
@@ -334,22 +361,30 @@ function validateProject(value) {
   });
   const f=value.field;
   if(!f||!isSize(f.width)||!isSize(f.height))fail();
-  const readCells=cells=>{
-    if(!Array.isArray(cells)||cells.length!==f.width*f.height||!cells.every(c=>c===null||ids.has(c)))fail();
+  const limit=value.tileSize-1;
+  const readOffset=offset=>{
+    if(offset===undefined) return {x:0,y:0};
+    if(!offset||!Number.isInteger(offset.x)||!Number.isInteger(offset.y)||offset.x<-limit||offset.x>limit||offset.y<-limit||offset.y>limit)fail();
+    return {x:offset.x,y:offset.y};
+  };
+  const readCells=(cells,offset)=>{
+    const grid=layerGrid(f, offset);
+    if(!Array.isArray(cells)||cells.length!==grid.cols*grid.rows||!cells.every(c=>c===null||ids.has(c)))fail();
     return cells.slice();
   };
   const layerId=/^field-layer-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   let layers;
   if(value.version===2) {
     if(f.layers!==undefined)fail();
-    layers=[makeLayer('レイヤー 1',readCells(f.cells))];
+    layers=[makeLayer('レイヤー 1',readCells(f.cells,{x:0,y:0}))];
   } else {
     if(!Array.isArray(f.layers)||f.layers.length<1||f.layers.length>8)fail();
     const seen=new Set();
     layers=f.layers.map(layer=>{
       if(!layer||!layerId.test(layer.id)||seen.has(layer.id)||typeof layer.name!=='string'||layer.name.length>40||(layer.visible!==true&&layer.visible!==false))fail();
       seen.add(layer.id);
-      return {id:layer.id,name:layer.name,visible:layer.visible,cells:readCells(layer.cells)};
+      const offset=readOffset(layer.offset);
+      return {id:layer.id,name:layer.name,visible:layer.visible,cells:readCells(layer.cells,offset),offset};
     });
   }
   return {format:'dot-map',version:3,name:value.name,tileSize:value.tileSize,palette:normalizePalette(value.palette),types,field:{width:f.width,height:f.height,layers}};

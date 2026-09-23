@@ -23,7 +23,7 @@ function normalizeSelection() {
   if(!project.types.some(t=>t.id===selection.typeId)) selection.typeId=project.types[0].id;
   if(!project.field.layers.some(l=>l.id===selection.layerId)) selection.layerId=project.field.layers.at(-1).id;
   if(selection.cell!==null) {
-    if(selection.cell<0||selection.cell>=project.field.width*project.field.height) selection.cell=null;
+    if(selection.cell<0||selection.cell>=activeLayer().cells.length) selection.cell=null;
     else {
       const match=resolveCell(project,selection.cell,activeLayer());
       if(match) { selection.typeId=match.type.id;selection.mask=match.mask; }
@@ -80,7 +80,8 @@ function drawMap(target) {
       const match=resolveCell(project,index,layer);if(!match)return;
       const key=match.type.id+':'+match.mask;
       if(!cache.has(key))cache.set(key,tileCanvas(match.type,match.mask));
-      context.drawImage(cache.get(key),(index%width)*size,Math.floor(index/width)*size);
+      const origin=layerCellOrigin(project.field,layer,index,size);
+      context.drawImage(cache.get(key),origin.x,origin.y);
     });
   }
 }
@@ -210,10 +211,25 @@ function renderTileList() {
   });
   if(!visible.length){const p=document.createElement('p');p.className='empty-message';p.textContent='この種類はフィールドに未配置です。';$('tile-list').append(p);}
 }
+function layerIndexAt(layer, fx, fy) {
+  const grid=layerGrid(project.field, layer.offset), col=fx+grid.padX, row=fy+grid.padY;
+  return col>=0&&row>=0&&col<grid.cols&&row<grid.rows?row*grid.cols+col:null;
+}
+function cellPlace(index, layer) {
+  const grid=layerGrid(project.field, layer.offset);
+  const fx=index%grid.cols-grid.padX, fy=Math.floor(index/grid.cols)-grid.padY;
+  const axis=(n,limit)=>n<0||n>=limit?'外':String(n+1);
+  return {fx,fy,grid,col:axis(fx,project.field.width),row:axis(fy,project.field.height),outside:fx<0||fy<0||fx>=project.field.width||fy>=project.field.height};
+}
 function editorCell(index) {
   const layers=project.field.layers, active=activeLayer(), at=layers.indexOf(active);
   if(active.cells[index]) return {id:active.cells[index],under:false};
-  for(let i=at-1;i>=0;i--) if(layers[i].visible&&layers[i].cells[index]) return {id:layers[i].cells[index],under:true};
+  const {fx,fy}=cellPlace(index, active);
+  for(let i=at-1;i>=0;i--) {
+    if(!layers[i].visible) continue;
+    const atIndex=layerIndexAt(layers[i], fx, fy);
+    if(atIndex!==null&&layers[i].cells[atIndex]) return {id:layers[i].cells[atIndex],under:true};
+  }
   return {id:null,under:false};
 }
 function faded(hex) {
@@ -222,8 +238,9 @@ function faded(hex) {
 }
 function renderFieldGrid() {
   $('field-grid').replaceChildren();fieldButtons=[];
-  $('field-grid').style.gridTemplateColumns=`repeat(${project.field.width}, 1fr)`;
-  for(let index=0;index<project.field.width*project.field.height;index++) {
+  const grid=layerGrid(project.field, activeLayer().offset);
+  $('field-grid').style.gridTemplateColumns=`repeat(${grid.cols}, 1fr)`;
+  for(let index=0;index<grid.cols*grid.rows;index++) {
     const button=document.createElement('button');button.className='field-cell';button.dataset.cell=index;
     button.onclick=event=>{if(event.detail===0) keyboardFieldEdit(index);};
     $('field-grid').append(button);fieldButtons.push(button);
@@ -236,8 +253,9 @@ function refreshFieldGrid(match) {
   fieldButtons.forEach((button,index)=>{
     const shown=editorCell(index), type=types.get(shown.id);
     button.textContent=type?type.number:'·';button.style.background=type?(shown.under?faded(type.color):type.color):'';
-    button.classList.toggle('empty',!type);button.classList.toggle('under',shown.under);button.setAttribute('aria-pressed',selection.cell===index);
-    button.setAttribute('aria-label',`列${index%project.field.width+1} 行${Math.floor(index/project.field.width)+1}：${type?type.name:'空'}${shown.under?'（下のレイヤー）':''}`);
+    const place=cellPlace(index, layer);
+    button.classList.toggle('empty',!type);button.classList.toggle('under',shown.under);button.classList.toggle('overflow',place.outside);button.setAttribute('aria-pressed',selection.cell===index);
+    button.setAttribute('aria-label',`列${place.col} 行${place.row}：${type?type.name:'空'}${place.outside?'（はみ出し）':''}${shown.under?'（下のレイヤー）':''}`);
     const cellMatch=match&&layer.cells[index]===match.type.id?resolveCell(project,index,layer):null;
     button.classList.toggle('related',Boolean(cellMatch&&cellMatch.mask===match.mask));
   });
@@ -276,6 +294,10 @@ function renderLayers() {
   });
   $('add-layer').disabled=project.field.layers.length>=8;
   $('delete-layer').disabled=project.field.layers.length<=1;
+  const limit=project.tileSize-1, offset=activeLayer().offset||{x:0,y:0};
+  for(const [id,value] of [['offset-x',offset.x],['offset-y',offset.y]]) {
+    const el=$(id);el.min=-limit;el.max=limit;if(document.activeElement!==el)el.value=value;
+  }
 }
 function renderGraphics() {
   normalizeSelection();const match=selectedTile(),size=project.tileSize;
@@ -308,7 +330,8 @@ function renderGraphics() {
   $('bake-symmetry').textContent=`対称タイルへ焼き込む${targets?`（${targets}枚）`:''}`;
   updateMarquee();
   $('shared-count').textContent=match?`${counts.get(match.mask)||0} マスがこのタイルを共有`:'このマスにはタイルがありません';
-  $('selection-description').textContent=selection.cell!==null?`選択：列 ${selection.cell%project.field.width+1}・行 ${Math.floor(selection.cell/project.field.width)+1} ／ 同じ接続パターンへ一括反映`:'タイル一覧から選択中 ／ 未使用のパターンも編集できます';
+  const place=selection.cell!==null?cellPlace(selection.cell, activeLayer()):null;
+  $('selection-description').textContent=place?`選択：列 ${place.col}・行 ${place.row} ／ 同じ接続パターンへ一括反映`:'タイル一覧から選択中 ／ 未使用のパターンも編集できます';
   peering($('selected-peering'),currentType().styleBits,match?match.mask:0);
   refreshFieldGrid(match);
   drawMap($('map-preview'));
@@ -612,7 +635,7 @@ $('field-grid').addEventListener('pointermove',event=>{
   if(!gesture||gesture.kind!=='field'||gesture.pointerId!==event.pointerId)return;
   const index=fieldCellAt(event);if(index===null||index===gesture.previous)return;
   // Reuse line rasterization so a fast drag cannot skip field cells.
-  const w=project.field.width, side=Math.max(w,project.field.height), stroke=Array(side*side).fill(null);
+  const grid=layerGrid(project.field, activeLayer().offset), w=grid.cols, side=Math.max(w,grid.rows), stroke=Array(side*side).fill(null);
   drawLine(stroke,side,[gesture.previous%w,Math.floor(gesture.previous/w)],[index%w,Math.floor(index/w)],true);
   stroke.forEach((value,i)=>{if(value)paintFieldCell(Math.floor(i/side)*w+i%side);});
   paintFieldCell(index);gesture.previous=index;renderGraphics();
@@ -621,9 +644,26 @@ for(const element of [canvas,$('field-grid')])for(const event of ['pointerup','p
 window.addEventListener('blur',()=>finishGesture());
 window.addEventListener('pagehide',()=>{if(gesture)finishGesture();});
 $('map-preview').onclick=event=>{
-  const rect=$('map-preview').getBoundingClientRect(),x=Math.floor((event.clientX-rect.left)/rect.width*project.field.width),y=Math.floor((event.clientY-rect.top)/rect.height*project.field.height);
-  if(x>=0&&x<project.field.width&&y>=0&&y<project.field.height)selectCell(y*project.field.width+x);
+  const rect=$('map-preview').getBoundingClientRect(), size=project.tileSize, layer=activeLayer(), grid=layerGrid(project.field, layer.offset);
+  const px=Math.floor((event.clientX-rect.left)/rect.width*project.field.width*size), py=Math.floor((event.clientY-rect.top)/rect.height*project.field.height*size);
+  const col=grid.padX+Math.floor((px-grid.x)/size), row=grid.padY+Math.floor((py-grid.y)/size);
+  if(col>=0&&col<grid.cols&&row>=0&&row<grid.rows)selectCell(row*grid.cols+col);
 };
+function applyLayerOffset(x, y) {
+  const layer=activeLayer(), field=project.field, grid=layerGrid(field, layer.offset);
+  const fx=selection.cell===null?null:selection.cell%grid.cols-grid.padX, fy=selection.cell===null?null:Math.floor(selection.cell/grid.cols)-grid.padY;
+  setLayerOffset(layer, field, x, y);
+  if(fx===null)return;
+  const next=layerIndexAt(layer, fx, fy);selection.cell=next;
+}
+function commitOffset() {
+  const limit=project.tileSize-1, read=el=>{const n=Number(el.value);return Number.isInteger(n)?Math.max(-limit,Math.min(limit,n)):null;};
+  const x=read($('offset-x')), y=read($('offset-y')), layer=activeLayer();
+  if(x===null||y===null){renderLayers();return;}
+  if((layer.offset?.x||0)===x&&(layer.offset?.y||0)===y)return;
+  change(()=>applyLayerOffset(x,y));
+}
+$('offset-x').onchange=commitOffset;$('offset-y').onchange=commitOffset;
 function setFieldTool(value) {
   finishGesture();fieldTool=value;
   document.querySelectorAll('[data-field-tool]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.fieldTool===value));
