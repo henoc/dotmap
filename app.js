@@ -221,21 +221,6 @@ function cellPlace(index, layer) {
   const axis=(n,limit)=>n<0||n>=limit?'外':String(n+1);
   return {fx,fy,grid,col:axis(fx,project.field.width),row:axis(fy,project.field.height),outside:fx<0||fy<0||fx>=project.field.width||fy>=project.field.height};
 }
-function editorCell(index) {
-  const layers=project.field.layers, active=activeLayer(), at=layers.indexOf(active);
-  if(active.cells[index]) return {id:active.cells[index],under:false};
-  const {fx,fy}=cellPlace(index, active);
-  for(let i=at-1;i>=0;i--) {
-    if(!layers[i].visible) continue;
-    const atIndex=layerIndexAt(layers[i], fx, fy);
-    if(atIndex!==null&&layers[i].cells[atIndex]) return {id:layers[i].cells[atIndex],under:true};
-  }
-  return {id:null,under:false};
-}
-function faded(hex) {
-  const value=parseInt(hex.slice(1),16), mix=(channel,paper)=>Math.round(channel+(paper-channel)*.55);
-  return '#'+[mix(value>>16,0xef),mix((value>>8)&255,0xe6),mix(value&255,0xd6)].map(n=>n.toString(16).padStart(2,'0')).join('');
-}
 function renderFieldGrid() {
   $('field-grid').replaceChildren();fieldButtons=[];
   const grid=layerGrid(project.field, activeLayer().offset);
@@ -251,11 +236,11 @@ function refreshFieldGrid(match) {
   const types=new Map(project.types.map((type,index)=>[type.id,{...type,number:index+1}]));
   const layer=activeLayer();
   fieldButtons.forEach((button,index)=>{
-    const shown=editorCell(index), type=types.get(shown.id);
-    button.textContent=type?type.number:'·';button.style.background=type?(shown.under?faded(type.color):type.color):'';
+    const type=types.get(layer.cells[index]);
+    button.textContent=type?type.number:'·';button.style.background=type?type.color:'';
     const place=cellPlace(index, layer);
-    button.classList.toggle('empty',!type);button.classList.toggle('under',shown.under);button.classList.toggle('overflow',place.outside);button.setAttribute('aria-pressed',selection.cell===index);
-    button.setAttribute('aria-label',`列${place.col} 行${place.row}：${type?type.name:'空'}${place.outside?'（はみ出し）':''}${shown.under?'（下のレイヤー）':''}`);
+    button.classList.toggle('empty',!type);button.classList.toggle('overflow',place.outside);button.setAttribute('aria-pressed',selection.cell===index);
+    button.setAttribute('aria-label',`列${place.col} 行${place.row}：${type?type.name:'空'}${place.outside?'（はみ出し）':''}`);
     const cellMatch=match&&layer.cells[index]===match.type.id?resolveCell(project,index,layer):null;
     button.classList.toggle('related',Boolean(cellMatch&&cellMatch.mask===match.mask));
   });
@@ -667,7 +652,7 @@ $('offset-x').onchange=commitOffset;$('offset-y').onchange=commitOffset;
 function setFieldTool(value) {
   finishGesture();fieldTool=value;
   document.querySelectorAll('[data-field-tool]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.fieldTool===value));
-  $('field-hint').textContent={select:'選択中のレイヤーに配置します。下の表示中レイヤーは薄く見えます。マスを選ぶと、その場所のタイルを編集できます。',paint:'選択中のレイヤーに配置します。下の表示中レイヤーは薄く見えます。',erase:'選択中のレイヤーを空に戻します。下の表示中レイヤーは薄く見えます。'}[value];
+  $('field-hint').textContent={select:'選択中のレイヤーに配置します。マスを選ぶと、その場所のタイルを編集できます。',paint:'選択中のレイヤーに配置します。',erase:'選択中のレイヤーを空に戻します。'}[value];
 }
 $('add-layer').onclick=()=>change(()=>{
   const layer=makeLayer('レイヤー '+(project.field.layers.length+1),Array(project.field.width*project.field.height).fill(null));
