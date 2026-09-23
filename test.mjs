@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import { deflateSync } from 'node:zlib';
 
 const core = readFileSync(new URL('./core.js', import.meta.url), 'utf8');
-const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM})', {TextEncoder, TextDecoder, crypto});
+const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, makeLayer, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, makeLayer, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM})', {TextEncoder, TextDecoder, crypto});
 const pixels = Array(64).fill(null);
 drawLine(pixels, 8, [0,0], [7,7], '#123456');
 assert.equal(pixels.filter(Boolean).length, 8, 'Fast diagonal strokes must be continuous');
@@ -40,15 +40,15 @@ assert.equal(patternMask(3,2),2,'Corner stays independent if one side is outside
 assert.equal(patternMask(193,128),0,'Top-left wraps to top and left');
 assert.equal(patternMask(193,193),193);
 const neighborProject=createProject();
-neighborProject.field={width:3,height:3,cells:Array(9).fill(null)};
+neighborProject.field={width:3,height:3,layers:[makeLayer('レイヤー 1',Array(9).fill(null))]};
 const neighborId=neighborProject.types[0].id;
 const positions=[1,2,5,8,7,6,3,0];
 for(let styleBits=0;styleBits<256;styleBits++) {
   const masks=patterns(styleBits),reachable=new Set();
   neighborProject.types[0].styleBits=styleBits;
   for(let raw=0;raw<256;raw++) {
-    neighborProject.field.cells.fill(null);neighborProject.field.cells[4]=neighborId;
-    positions.forEach((index,bit)=>{if(raw&(1<<bit))neighborProject.field.cells[index]=neighborId;});
+    neighborProject.field.layers[0].cells.fill(null);neighborProject.field.layers[0].cells[4]=neighborId;
+    positions.forEach((index,bit)=>{if(raw&(1<<bit))neighborProject.field.layers[0].cells[index]=neighborId;});
     const resolved=resolveCell(neighborProject,4);
     // Independent per-direction oracle: gate each enabled corner by its enabled side pair.
     let expected=0;
@@ -67,11 +67,12 @@ for(let styleBits=0;styleBits<256;styleBits++) {
 const project=createProject();
 const grass=project.types[0].id, water=project.types[1].id;
 assert.match(grass,/^tileset-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+assert.match(project.field.layers[0].id,/^field-layer-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 assert.equal(new Set(project.types.map(t=>t.id)).size,3);
-project.field={width:3,height:2,cells:[grass,grass,water,water,grass,grass]};
+project.field={width:3,height:2,layers:[makeLayer('レイヤー 1',[grass,grass,water,water,grass,grass])]};
 assert.equal(resolveCell(project,0).raw,12,'N/W boundary must not wrap into another row');
 assert.equal(resolveCell(project,2).mask,0,'Different types are disconnected');
-project.field={width:4,height:4,cells:Array(16).fill(grass)};
+project.field={width:4,height:4,layers:[makeLayer('レイヤー 1',Array(16).fill(grass))]};
 assert.equal(resolveCell(project,5).mask,resolveCell(project,10).mask);
 const type=project.types[0], mask=resolveCell(project,5).mask;
 type.symmetry=0;type.centerFill=false;
@@ -85,14 +86,29 @@ assert.equal(type.styleBits,85);assert.equal(type.tiles[255],undefined,'Incompat
 assert.equal(type.tiles[0][0],'#123456','Compatible patterns retain their pixels');
 setStyleBits(type,255);assert.notEqual(tilePixels(type,16,255)[0],'#abcdef','Discarded pixels must not resurrect on another style change');
 const newType=makeType('new','Blank','#123456');assert.ok(tilePixels(newType,16,0).every(p=>p===null));
-resizeField(project,5,3);assert.equal(project.field.cells.length,15);assert.equal(project.field.cells[4],null);assert.equal(project.field.cells[5],grass);
-removeType(project,grass);assert.ok(project.field.cells.every(p=>p===null));
+resizeField(project,5,3);assert.equal(project.field.layers[0].cells.length,15);assert.equal(project.field.layers[0].cells[4],null);assert.equal(project.field.layers[0].cells[5],grass);
+const back=makeLayer('下',[grass,null]), front=makeLayer('上',[null,grass]);
+project.field={width:2,height:1,layers:[back,front]};
+assert.equal(resolveCell(project,0,back).raw,0,'A neighbor on another layer does not connect');
+assert.equal(resolveCell(project,1,front).raw,0);
+back.cells=[grass,grass];
+assert.equal(resolveCell(project,0,back).raw&4,4,'The same layer still connects to the right');
+resizeField(project,3,1);
+assert.equal(JSON.stringify(project.field.layers.map(layer=>layer.cells)),JSON.stringify([[grass,grass,null],[null,grass,null]]));
+removeType(project,grass);assert.ok(project.field.layers.every(layer=>layer.cells.every(p=>p===null)));
+const legacySource=createProject();
+const legacy={format:'dot-map',version:2,name:legacySource.name,tileSize:legacySource.tileSize,palette:legacySource.palette,types:legacySource.types,field:{width:legacySource.field.width,height:legacySource.field.height,cells:legacySource.field.layers[0].cells.slice()}};
+const migrated=validateProject(JSON.parse(JSON.stringify(legacy)));
+assert.equal(migrated.version,3);assert.equal(migrated.field.layers.length,1);assert.equal(migrated.field.layers[0].visible,true);
+assert.equal(JSON.stringify(migrated.field.layers[0].cells),JSON.stringify(legacy.field.cells));
+assert.match(migrated.field.layers[0].id,/^field-layer-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 const roundTrip=createProject();
 roundTrip.types[0].tiles[255]=Array(256).fill('#123456');
 const serialize=value=>JSON.stringify(value);
 assert.equal(serialize(validateProject(JSON.parse(serialize(roundTrip)))),serialize(roundTrip));
 for(const corrupt of [
-  p=>p.field.cells.push(null),p=>p.field.cells[0]='missing',p=>p.types.push(p.types[0]),
+  p=>p.field.layers[0].cells.push(null),p=>p.field.layers[0].cells[0]='missing',p=>p.types.push(p.types[0]),
+  p=>p.field.layers.push(p.field.layers[0]),p=>{p.version=2;p.field={width:p.field.width,height:p.field.height,cells:p.field.layers[0].cells,layers:p.field.layers};},
   p=>p.types[0].styleBits='invalid',p=>p.tileSize=999,p=>p.field.width=0,
   p=>p.types[0].tiles[2]=Array(256).fill(null),p=>p.types[0].tiles[0]=['#123456'],
   p=>p.types[0].tiles[0]=Array(256).fill('red'),p=>p.types[0].styleBits=256,p=>p.types[0].styleBits=-1,p=>p.types[0].styleBits=1.5,
@@ -345,7 +361,7 @@ const derivedBefore=JSON.stringify(tilePixels(symmetric,8,4));
 const reverseEntries=Object.fromEntries(Object.entries(symmetric.tiles).reverse());
 symmetric.tiles=reverseEntries;
 assert.equal(JSON.stringify(tilePixels(symmetric,8,4)),derivedBefore);
-const symmetryProject=createProject(8);symmetryProject.types=[symmetric];symmetryProject.field.cells.fill('sym');
+const symmetryProject=createProject(8);symmetryProject.types=[symmetric];symmetryProject.field.layers[0].cells.fill('sym');
 const restored=validateProject(JSON.parse(JSON.stringify(symmetryProject)));
 assert.equal(restored.types[0].symmetry,7);
 assert.equal(JSON.stringify(tilePixels(restored.types[0],8,4)),derivedBefore);
@@ -397,7 +413,7 @@ const corners=makeType('corners','角','#123456');
 corners.styleBits=170;corners.centerFill=true;corners.tiles={170:fill.slice()};
 assert.equal(centerSourceMask(corners),170);
 same(tilePixels(corners,8,0),fill);
-const project=createProject(8);project.types=[type];project.field.cells.fill('fill');
+const project=createProject(8);project.types=[type];project.field.layers[0].cells.fill('fill');
 type.centerFill=true;type.tiles={255:fill.slice()};
 const restored=validateProject(JSON.parse(JSON.stringify(project)));
 assert.equal(restored.types[0].centerFill,true);

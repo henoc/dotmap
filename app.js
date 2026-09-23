@@ -7,23 +7,25 @@ const pngIO = EditorFileIO.createFileIO({id:'dot-map-atlas',description:'アト�
 const paletteIO = EditorFileIO.createFileIO({id:'dot-map-palette',description:'カラーパレット',accept:{'text/plain':['.hex']}});
 let fileTarget={handle:null,name:null}, fileBusy=false, downloadKind='project';
 let project = createProject();
-let selection = { typeId:project.types[0].id, mask:255, cell:9 };
+let selection = { typeId:project.types[0].id, mask:255, cell:9, layerId:project.field.layers[0].id };
 let tool='pen', lastDrawTool='pen', fieldTool='select', color='#628b53', brush=1, zoom=16, previewScale=2;
 let undoStack=[], redoStack=[], gesture=null, toastTimer, marquee=null, clipboard=null;
 let tileCards=new Map(), fieldButtons=[];
 let paletteIndex=2, importedPalette=[], paletteReadId=0, exporting=false, pendingStyleChange=null, snapMode='rgb';
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function currentType() { return project.types.find(t=>t.id===selection.typeId)||project.types[0]; }
+function activeLayer() { return project.field.layers.find(l=>l.id===selection.layerId)||project.field.layers.at(-1); }
 function selectedTile() {
-  if(selection.cell!==null) return resolveCell(project,selection.cell);
+  if(selection.cell!==null) return resolveCell(project,selection.cell,activeLayer());
   return {type:currentType(),mask:selection.mask};
 }
 function normalizeSelection() {
   if(!project.types.some(t=>t.id===selection.typeId)) selection.typeId=project.types[0].id;
+  if(!project.field.layers.some(l=>l.id===selection.layerId)) selection.layerId=project.field.layers.at(-1).id;
   if(selection.cell!==null) {
-    if(selection.cell<0||selection.cell>=project.field.cells.length) selection.cell=null;
+    if(selection.cell<0||selection.cell>=project.field.width*project.field.height) selection.cell=null;
     else {
-      const match=resolveCell(project,selection.cell);
+      const match=resolveCell(project,selection.cell,activeLayer());
       if(match) { selection.typeId=match.type.id;selection.mask=match.mask; }
     }
   }
@@ -67,15 +69,19 @@ function tileCanvas(type, mask) {
   paintPixels(target,tilePixels(type,project.tileSize,mask),project.tileSize);return target;
 }
 function drawMap(target) {
-  const {width,height,cells}=project.field, size=project.tileSize;
+  const {width,height,layers}=project.field, size=project.tileSize;
   target.width=width*size;target.height=height*size;
   const context=target.getContext('2d'), cache=new Map();
-  cells.forEach((id,index)=>{
-    const match=resolveCell(project,index);if(!match)return;
-    const key=match.type.id+':'+match.mask;
-    if(!cache.has(key))cache.set(key,tileCanvas(match.type,match.mask));
-    context.drawImage(cache.get(key),(index%width)*size,Math.floor(index/width)*size);
-  });
+  context.clearRect(0,0,target.width,target.height);
+  for(const layer of layers) {
+    if(!layer.visible)continue;
+    layer.cells.forEach((id,index)=>{
+      const match=resolveCell(project,index,layer);if(!match)return;
+      const key=match.type.id+':'+match.mask;
+      if(!cache.has(key))cache.set(key,tileCanvas(match.type,match.mask));
+      context.drawImage(cache.get(key),(index%width)*size,Math.floor(index/width)*size);
+    });
+  }
 }
 function peering(element, styleBits, mask) {
   const bits=[128,1,2,64,-1,4,32,16,8];
@@ -89,22 +95,23 @@ function peering(element, styleBits, mask) {
 }
 function usageCounts(typeId) {
   const counts=new Map();
-  project.field.cells.forEach((id,index)=>{
+  for(const layer of project.field.layers) layer.cells.forEach((id,index)=>{
     if(id!==typeId)return;
-    const match=resolveCell(project,index);counts.set(match.mask,(counts.get(match.mask)||0)+1);
-  });return counts;
+    const match=resolveCell(project,index,layer);counts.set(match.mask,(counts.get(match.mask)||0)+1);
+  });
+  return counts;
 }
-function renameType(row, type) {
+function beginRename(row, current, fallback, apply) {
   const name=row.querySelector('.type-name'), input=document.createElement('input');
-  input.className='type-name-input';input.maxLength=40;input.value=type.name;input.setAttribute('aria-label','マップチップ名');
+  input.className='type-name-input';input.maxLength=40;input.value=current;input.setAttribute('aria-label',fallback==='名前のないレイヤー'?'レイヤー名':'マップチップ名');
   name.replaceWith(input);row.draggable=false;row.querySelector('.type-rename').hidden=true;
   input.focus();input.select();
   let done=false;
   const finish=save=>{
     if(done)return;done=true;
-    const value=input.value.trim()||'名前のないマップチップ';
-    if(!save||value===type.name){renderAll();return;}
-    change(()=>{const found=project.types.find(t=>t.id===type.id);if(found)found.name=value;});
+    const value=input.value.trim()||fallback;
+    if(!save||value===current){renderAll();return;}
+    apply(value);
   };
   input.onblur=()=>finish(true);
   input.addEventListener('compositionend',()=>{
@@ -123,9 +130,12 @@ function renameType(row, type) {
   };
   input.onclick=event=>event.stopPropagation();
 }
-let dragFrom=-1;
+function renameType(row, type) {
+  beginRename(row,type.name,'名前のないマップチップ',value=>change(()=>{const found=project.types.find(t=>t.id===type.id);if(found)found.name=value;}));
+}
+let dragFrom=-1, dragKind='';
 function clearDropLine() {
-  document.querySelectorAll('.type-button').forEach(row=>row.classList.remove('drop-before','drop-after'));
+  document.querySelectorAll('.drop-before,.drop-after').forEach(row=>row.classList.remove('drop-before','drop-after'));
 }
 function dropAt(event, index) {
   const rect=event.currentTarget.getBoundingClientRect();
@@ -149,21 +159,21 @@ function renderTypes() {
     const number=document.createElement('small');number.textContent=String(index+1).padStart(2,'0');
     edit.onclick=event=>{
       event.stopPropagation();event.preventDefault();finishGesture();
-      if(selection.typeId!==type.id){selection={typeId:type.id,mask:0,cell:null};renderAll();}
+      if(selection.typeId!==type.id){selection={typeId:type.id,mask:0,cell:null,layerId:selection.layerId};renderAll();}
       renameType(document.querySelector(`[data-type="${CSS.escape(type.id)}"]`),type);
     };
     row.append(dot,name,edit,number);
-    row.onclick=()=>{finishGesture();selection={typeId:type.id,mask:0,cell:null};renderAll();};
+    row.onclick=()=>{finishGesture();selection={typeId:type.id,mask:0,cell:null,layerId:selection.layerId};renderAll();};
     row.onkeydown=event=>{if(event.target===row&&(event.key==='Enter'||event.key===' ')){event.preventDefault();row.click();}};
-    row.ondragstart=event=>{dragFrom=index;event.dataTransfer.setData('text/plain',type.id);event.dataTransfer.effectAllowed='move';row.classList.add('dragging');};
-    row.ondragend=()=>{dragFrom=-1;row.classList.remove('dragging');clearDropLine();};
-    row.ondragover=event=>{event.preventDefault();event.dataTransfer.dropEffect='move';showDropLine(event,row,index);};
-    row.ondragleave=event=>{if(!$('type-list').contains(event.relatedTarget))clearDropLine();};
+    row.ondragstart=event=>{dragKind='type';dragFrom=index;event.dataTransfer.setData('text/plain',type.id);event.dataTransfer.effectAllowed='move';row.classList.add('dragging');};
+    row.ondragend=()=>{dragKind='';dragFrom=-1;row.classList.remove('dragging');clearDropLine();};
+    row.ondragover=event=>{if(dragKind!=='type')return;event.preventDefault();event.dataTransfer.dropEffect='move';showDropLine(event,row,index);};
+    row.ondragleave=event=>{if(dragKind==='type'&&!$('type-list').contains(event.relatedTarget))clearDropLine();};
     row.ondrop=event=>{
       event.preventDefault();
       const to=dropAt(event,index),from=dragFrom;
       clearDropLine();
-      if(from<0||from===to)return;
+      if(dragKind!=='type'||from<0||from===to)return;
       change(()=>{const [item]=project.types.splice(from,1);project.types.splice(to,0,item);});
     };
     $('type-list').append(row);
@@ -200,26 +210,72 @@ function renderTileList() {
   });
   if(!visible.length){const p=document.createElement('p');p.className='empty-message';p.textContent='この種類はフィールドに未配置です。';$('tile-list').append(p);}
 }
+function editorCell(index) {
+  const layers=project.field.layers, active=activeLayer(), at=layers.indexOf(active);
+  if(active.cells[index]) return {id:active.cells[index],under:false};
+  for(let i=at-1;i>=0;i--) if(layers[i].visible&&layers[i].cells[index]) return {id:layers[i].cells[index],under:true};
+  return {id:null,under:false};
+}
+function faded(hex) {
+  const value=parseInt(hex.slice(1),16), mix=(channel,paper)=>Math.round(channel+(paper-channel)*.55);
+  return '#'+[mix(value>>16,0xef),mix((value>>8)&255,0xe6),mix(value&255,0xd6)].map(n=>n.toString(16).padStart(2,'0')).join('');
+}
 function renderFieldGrid() {
   $('field-grid').replaceChildren();fieldButtons=[];
   $('field-grid').style.gridTemplateColumns=`repeat(${project.field.width}, 1fr)`;
-  project.field.cells.forEach((id,index)=>{
+  for(let index=0;index<project.field.width*project.field.height;index++) {
     const button=document.createElement('button');button.className='field-cell';button.dataset.cell=index;
     button.onclick=event=>{if(event.detail===0) keyboardFieldEdit(index);};
     $('field-grid').append(button);fieldButtons.push(button);
-  });
+  }
   $('field-width').value=project.field.width;$('field-height').value=project.field.height;
 }
 function refreshFieldGrid(match) {
   const types=new Map(project.types.map((type,index)=>[type.id,{...type,number:index+1}]));
-  project.field.cells.forEach((id,index)=>{
-    const button=fieldButtons[index],type=types.get(id);
-    button.textContent=type?type.number:'·';button.style.background=type?type.color:'';
-    button.classList.toggle('empty',!type);button.setAttribute('aria-pressed',selection.cell===index);
-    button.setAttribute('aria-label',`列${index%project.field.width+1} 行${Math.floor(index/project.field.width)+1}：${type?type.name:'空'}`);
-    const cellMatch=match&&id===match.type.id?resolveCell(project,index):null;
+  const layer=activeLayer();
+  fieldButtons.forEach((button,index)=>{
+    const shown=editorCell(index), type=types.get(shown.id);
+    button.textContent=type?type.number:'·';button.style.background=type?(shown.under?faded(type.color):type.color):'';
+    button.classList.toggle('empty',!type);button.classList.toggle('under',shown.under);button.setAttribute('aria-pressed',selection.cell===index);
+    button.setAttribute('aria-label',`列${index%project.field.width+1} 行${Math.floor(index/project.field.width)+1}：${type?type.name:'空'}${shown.under?'（下のレイヤー）':''}`);
+    const cellMatch=match&&layer.cells[index]===match.type.id?resolveCell(project,index,layer):null;
     button.classList.toggle('related',Boolean(cellMatch&&cellMatch.mask===match.mask));
   });
+}
+function renderLayers() {
+  $('layer-list').replaceChildren();
+  [...project.field.layers].reverse().forEach((layer,visual)=>{
+    const row=document.createElement('div');row.className='type-button';row.dataset.layer=layer.id;row.draggable=true;row.tabIndex=0;row.setAttribute('aria-pressed',layer.id===activeLayer().id);
+    const eye=document.createElement('button');eye.type='button';eye.className='layer-eye';eye.setAttribute('aria-pressed',layer.visible);eye.title=layer.visible?'表示中':'非表示';eye.setAttribute('aria-label',layer.name+(layer.visible?'を非表示':'を表示'));eye.innerHTML=`<svg><use href="#${layer.visible?'i-eye':'i-eye-off'}"/></svg>`;
+    const name=document.createElement('span');name.className='type-name';name.textContent=layer.name;
+    const edit=document.createElement('button');edit.type='button';edit.className='type-rename';edit.title='名前を編集';edit.setAttribute('aria-label',layer.name+'の名前を編集');edit.innerHTML='<svg><use href="#i-pen"/></svg>';
+    eye.onclick=event=>{event.stopPropagation();event.preventDefault();finishGesture();change(()=>{const found=project.field.layers.find(l=>l.id===layer.id);if(found)found.visible=!found.visible;});};
+    edit.onclick=event=>{
+      event.stopPropagation();event.preventDefault();finishGesture();
+      if(selection.layerId!==layer.id){selection.layerId=layer.id;renderAll();}
+      beginRename(document.querySelector(`[data-layer="${CSS.escape(layer.id)}"]`),layer.name,'名前のないレイヤー',value=>change(()=>{const found=project.field.layers.find(l=>l.id===layer.id);if(found)found.name=value;}));
+    };
+    row.append(eye,name,edit);
+    row.onclick=()=>{finishGesture();selection.layerId=layer.id;renderAll();};
+    row.onkeydown=event=>{if(event.target===row&&(event.key==='Enter'||event.key===' ')){event.preventDefault();row.click();}};
+    row.ondragstart=event=>{dragKind='layer';dragFrom=visual;event.dataTransfer.setData('text/plain',layer.id);event.dataTransfer.effectAllowed='move';row.classList.add('dragging');};
+    row.ondragend=()=>{dragKind='';dragFrom=-1;row.classList.remove('dragging');clearDropLine();};
+    row.ondragover=event=>{if(dragKind!=='layer')return;event.preventDefault();event.dataTransfer.dropEffect='move';showDropLine(event,row,visual);};
+    row.ondragleave=event=>{if(dragKind==='layer'&&!$('layer-list').contains(event.relatedTarget))clearDropLine();};
+    row.ondrop=event=>{
+      event.preventDefault();
+      const to=dropAt(event,visual),from=dragFrom;
+      clearDropLine();
+      if(dragKind!=='layer'||from<0||from===to)return;
+      change(()=>{
+        const layers=project.field.layers, origin=layers.length-1-from, dest=layers.length-1-to;
+        const [item]=layers.splice(origin,1);layers.splice(dest,0,item);
+      });
+    };
+    $('layer-list').append(row);
+  });
+  $('add-layer').disabled=project.field.layers.length>=8;
+  $('delete-layer').disabled=project.field.layers.length<=1;
 }
 function renderGraphics() {
   normalizeSelection();const match=selectedTile(),size=project.tileSize;
@@ -262,7 +318,7 @@ function renderGraphics() {
 }
 function renderAll() {
   normalizeSelection();$('filename').value=project.name;
-  renderTypes();renderTileList();renderFieldGrid();renderPalette();renderGraphics();
+  renderTypes();renderLayers();renderTileList();renderFieldGrid();renderPalette();renderGraphics();
 }
 function fit() { zoom=Math.max(2,Math.min(20,Math.floor(Math.min($('stage').clientWidth-56,$('stage').clientHeight-56)/project.tileSize))); }
 function setColor(value, index=project.palette.indexOf(value.toLowerCase())) {
@@ -517,7 +573,7 @@ function selectCell(index) {
   finishGesture();selection.cell=index;normalizeSelection();renderAll();
 }
 function paintFieldCell(index) {
-  project.field.cells[index]=fieldTool==='erase'?null:selection.typeId;
+  activeLayer().cells[index]=fieldTool==='erase'?null:selection.typeId;
   selection.cell=index;normalizeSelection();
 }
 function keyboardFieldEdit(index) {
@@ -549,8 +605,17 @@ $('map-preview').onclick=event=>{
 function setFieldTool(value) {
   finishGesture();fieldTool=value;
   document.querySelectorAll('[data-field-tool]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.fieldTool===value));
-  $('field-hint').textContent={select:'マスを選ぶと、その場所のタイルを編集できます。',paint:'左の種類を選び、クリック・ドラッグで配置します。',erase:'クリック・ドラッグで空のマスに戻します。'}[value];
+  $('field-hint').textContent={select:'選択中のレイヤーに配置します。下の表示中レイヤーは薄く見えます。マスを選ぶと、その場所のタイルを編集できます。',paint:'選択中のレイヤーに配置します。下の表示中レイヤーは薄く見えます。',erase:'選択中のレイヤーを空に戻します。下の表示中レイヤーは薄く見えます。'}[value];
 }
+$('add-layer').onclick=()=>change(()=>{
+  const layer=makeLayer('レイヤー '+(project.field.layers.length+1),Array(project.field.width*project.field.height).fill(null));
+  project.field.layers.push(layer);selection.layerId=layer.id;
+});
+$('delete-layer').onclick=()=>change(()=>{
+  const layers=project.field.layers, at=layers.findIndex(l=>l.id===selection.layerId);
+  if(layers.length<2||at<0)return;
+  layers.splice(at,1);selection.layerId=layers[Math.min(at,layers.length-1)].id;
+});
 function updateExportInfo() {
   const layout=atlasLayout(project), count=layout.metadata.types.reduce((n,type)=>n+type.tiles.length,0);
   $('export-info').textContent=`全${project.types.length}種類・${count}枚 ／ ${layout.width} × ${layout.height} px・横8列`;
@@ -604,7 +669,7 @@ $('style-form').onsubmit=event=>{
 };
 $('add-type').onclick=()=>{
   if(project.types.length>=32)return;
-  change(()=>{const id=typeId();const type=makeType(id,'マップチップ '+(project.types.length+1),DEFAULT_PALETTE[(project.types.length*3)%DEFAULT_PALETTE.length]);project.types.push(type);selection={typeId:id,mask:0,cell:null};$('used-only').checked=false;});
+  change(()=>{const id=typeId();const type=makeType(id,'マップチップ '+(project.types.length+1),DEFAULT_PALETTE[(project.types.length*3)%DEFAULT_PALETTE.length]);project.types.push(type);selection={typeId:id,mask:0,cell:null,layerId:selection.layerId};$('used-only').checked=false;});
   toast('新しい種類を追加しました。タイル一覧から描き始められます。');
 };
 $('import-atlas').onclick=()=>$('atlas-file').click();
@@ -619,7 +684,7 @@ $('atlas-file').onchange=async()=>{
     const context=canvas.getContext('2d');context.drawImage(image,0,0);
     const rgba=context.getImageData(0,0,canvas.width,canvas.height).data;
     let added=[];
-    change(()=>{added=importAtlas(project,metadata,rgba,canvas.width,canvas.height);if(added.length)selection={typeId:added[0].id,mask:0,cell:null};$('used-only').checked=false;});
+    change(()=>{added=importAtlas(project,metadata,rgba,canvas.width,canvas.height);if(added.length)selection={typeId:added[0].id,mask:0,cell:null,layerId:selection.layerId};$('used-only').checked=false;});
     toast(added.length?`アトラスから${added.length}種類を追加しました（${added.map(t=>t.name).join('、')}）`:'追加できる種類がありませんでした（上限32種類）。');
   } catch(error) {toast(error.message||'アトラスPNGを読み込めませんでした。');}
   finally {URL.revokeObjectURL(url);}
@@ -627,7 +692,7 @@ $('atlas-file').onchange=async()=>{
 $('delete-type').onclick=()=>{
   const type=currentType();if(project.types.length===1)return;
   if(!confirm(`「${type.name}」とそのタイルを削除しますか？ 配置済みのマスは空になります。元に戻すことができます。`))return;
-  change(()=>{removeType(project,type.id);selection={typeId:project.types[0].id,mask:0,cell:null};});
+  change(()=>{removeType(project,type.id);selection={typeId:project.types[0].id,mask:0,cell:null,layerId:selection.layerId};});
 };
 document.querySelectorAll('[data-direction]').forEach(input=>input.onchange=()=>{
   const bits=[...document.querySelectorAll('[data-direction]:checked')].reduce((mask,el)=>mask|(1<<Number(el.dataset.direction)),0);changeStyle(bits);
@@ -779,7 +844,7 @@ async function loadProjectFile(file,handle=null) {
   if(file.size>24*1024*1024)throw new Error('ファイルは24MB以下にしてください。');
   const loaded=validateProject(JSON.parse(await file.text()));
   if(!confirm('ファイルを開き、現在のプロジェクトを置き換えますか？ 元に戻すことができます。'))return;
-  change(()=>{project=loaded;fileTarget={handle,name:file.name};selection={typeId:project.types[0].id,mask:0,cell:null};$('used-only').checked=false;fit();});
+  change(()=>{project=loaded;fileTarget={handle,name:file.name};selection={typeId:project.types[0].id,mask:0,cell:null,layerId:project.field.layers.at(-1).id};$('used-only').checked=false;fit();});
   toast('プロジェクトを読み込みました');
 }
 async function openProject(file=null) {
@@ -800,7 +865,7 @@ $('download-cancel').onclick=()=>$('download-dialog').close();
 $('download-form').onsubmit=event=>{event.preventDefault();const name=$('download-name').value;$('download-dialog').close();if(downloadKind==='png')exportPNG(name);else if(downloadKind==='palette')savePalette(name);else saveProject(true,name);};
 $('new-project').onclick=()=>{finishGesture();$('new-dialog').showModal();};$('cancel-new').onclick=()=>$('new-dialog').close();
 $('new-form').onsubmit=event=>{
-  event.preventDefault();change(()=>{const id=typeId();project=createProject(Number($('new-size').value));fileTarget={handle:null,name:null};project.name=$('new-name').value.trim()||'無題の世界';project.types=[makeType(id,'マップチップ 1','#789563')];project.field.cells.fill(null);selection={typeId:id,mask:0,cell:null};$('used-only').checked=false;fit();});refreshFileControls();$('new-dialog').close();toast('新しいプロジェクトを作成しました');
+  event.preventDefault();change(()=>{const id=typeId();project=createProject(Number($('new-size').value));fileTarget={handle:null,name:null};project.name=$('new-name').value.trim()||'無題の世界';project.types=[makeType(id,'マップチップ 1','#789563')];project.field.layers=[makeLayer('レイヤー 1',Array(project.field.width*project.field.height).fill(null))];selection={typeId:id,mask:0,cell:null,layerId:project.field.layers[0].id};$('used-only').checked=false;fit();});refreshFileControls();$('new-dialog').close();toast('新しいプロジェクトを作成しました');
 };
 document.addEventListener('keydown',event=>{
   if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='s'&&!document.querySelector('dialog[open]')) {
@@ -827,7 +892,7 @@ document.addEventListener('keydown',event=>{
   const shortcut={b:'pen',l:'line',e:'eraser',g:'fill',i:'picker',m:'select'}[key];if(!event.altKey&&shortcut){event.preventDefault();setTool(shortcut);}
 });
 let loadWarning='';
-try {const data=localStorage.getItem(storageKey);if(data){project=validateProject(JSON.parse(data));selection={typeId:project.types[0].id,mask:0,cell:null};}}
+try {const data=localStorage.getItem(storageKey);if(data){project=validateProject(JSON.parse(data));selection={typeId:project.types[0].id,mask:0,cell:null,layerId:project.field.layers.at(-1).id};}}
 catch {loadWarning='保存データを読み込めませんでした。サンプルを表示しています。';}
 PALETTE_PRESETS.forEach(preset=>{const option=document.createElement('option');option.value=preset.id;option.textContent=preset.name;$('palette-preset').append(option);});
 fit();renderAll();setColor(color);refreshFileControls();if(loadWarning)toast(loadWarning);

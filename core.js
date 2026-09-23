@@ -229,8 +229,8 @@ function setStyleBits(type, styleBits) {
   for(const mask of discardedMasks(type,styleBits))delete type.tiles[mask];
   type.styleBits=styleBits;
 }
-function resolveCell(project, index) {
-  const { width, height, cells } = project.field;
+function resolveCell(project, index, layer = project.field.layers[0]) {
+  const { width, height } = project.field, cells = layer.cells;
   if (index < 0 || index >= cells.length) return null;
   const type = project.types.find(t => t.id === cells[index]);
   if (!type) return null;
@@ -245,6 +245,12 @@ function resolveCell(project, index) {
 function typeId() {
   return 'tileset-'+crypto.randomUUID();
 }
+function fieldLayerId() {
+  return 'field-layer-'+crypto.randomUUID();
+}
+function makeLayer(name, cells, id = fieldLayerId()) {
+  return { id, name, visible:true, cells };
+}
 function makeType(id, name, color, seed = false) {
   return { id, name, color, seed, styleBits:255, symmetry:7, centerFill:true, tiles:{} };
 }
@@ -252,9 +258,9 @@ function createProject(tileSize = 16) {
   const rows = ['11111111','11122211','11222211','11221111','11331111','13311111','33311111','11111111'];
   const types=[makeType(typeId(),'草地','#789563',true),makeType(typeId(),'水辺','#759eac',true),makeType(typeId(),'小道','#be9b6f',true)];
   return {
-    format:'dot-map', version:2, name:'小さな世界', tileSize, palette:DEFAULT_PALETTE.slice(),
+    format:'dot-map', version:3, name:'小さな世界', tileSize, palette:DEFAULT_PALETTE.slice(),
     types,
-    field:{width:8,height:8,cells:rows.join('').split('').map(c=>types[Number(c)-1].id)},
+    field:{width:8,height:8,layers:[makeLayer('レイヤー 1',rows.join('').split('').map(c=>types[Number(c)-1].id))]},
   };
 }
 function shiftColor(hex, amount) {
@@ -280,20 +286,20 @@ function tilePixels(type, tileSize, mask) {
 }
 function resizeField(project, width, height) {
   const old=project.field;
-  project.field={width,height,cells:Array.from({length:width*height},(_,i)=>{
+  project.field={width,height,layers:old.layers.map(layer=>({...layer,cells:Array.from({length:width*height},(_,i)=>{
     const x=i%width,y=Math.floor(i/width);
-    return x<old.width&&y<old.height?old.cells[y*old.width+x]:null;
-  })};
+    return x<old.width&&y<old.height?layer.cells[y*old.width+x]:null;
+  })}))};
 }
 function removeType(project, id) {
   project.types=project.types.filter(t=>t.id!==id);
-  project.field.cells=project.field.cells.map(value=>value===id?null:value);
+  for(const layer of project.field.layers) layer.cells=layer.cells.map(value=>value===id?null:value);
 }
 function validateProject(value) {
   const fail=()=>{throw new Error('対応するDOTマップのプロジェクトファイルではありません。');};
   const isColor=c=>typeof c==='string'&&/^#[0-9a-f]{6}$/i.test(c);
   const isSize=n=>Number.isInteger(n)&&n>=1&&n<=32;
-  if(!value||value.format!=='dot-map'||value.version!==2||![8,16,32,64].includes(value.tileSize)||typeof value.name!=='string'||value.name.length>80)fail();
+  if(!value||value.format!=='dot-map'||(value.version!==2&&value.version!==3)||![8,16,32,64].includes(value.tileSize)||typeof value.name!=='string'||value.name.length>80)fail();
   if(!Array.isArray(value.types)||value.types.length<1||value.types.length>32)fail();
   const ids=new Set();
   const types=value.types.map(t=>{
@@ -313,8 +319,26 @@ function validateProject(value) {
     return type;
   });
   const f=value.field;
-  if(!f||!isSize(f.width)||!isSize(f.height)||!Array.isArray(f.cells)||f.cells.length!==f.width*f.height||!f.cells.every(c=>c===null||ids.has(c)))fail();
-  return {format:'dot-map',version:2,name:value.name,tileSize:value.tileSize,palette:normalizePalette(value.palette),types,field:{width:f.width,height:f.height,cells:f.cells.slice()}};
+  if(!f||!isSize(f.width)||!isSize(f.height))fail();
+  const readCells=cells=>{
+    if(!Array.isArray(cells)||cells.length!==f.width*f.height||!cells.every(c=>c===null||ids.has(c)))fail();
+    return cells.slice();
+  };
+  const layerId=/^field-layer-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  let layers;
+  if(value.version===2) {
+    if(f.layers!==undefined)fail();
+    layers=[makeLayer('レイヤー 1',readCells(f.cells))];
+  } else {
+    if(!Array.isArray(f.layers)||f.layers.length<1||f.layers.length>8)fail();
+    const seen=new Set();
+    layers=f.layers.map(layer=>{
+      if(!layer||!layerId.test(layer.id)||seen.has(layer.id)||typeof layer.name!=='string'||layer.name.length>40||(layer.visible!==true&&layer.visible!==false))fail();
+      seen.add(layer.id);
+      return {id:layer.id,name:layer.name,visible:layer.visible,cells:readCells(layer.cells)};
+    });
+  }
+  return {format:'dot-map',version:3,name:value.name,tileSize:value.tileSize,palette:normalizePalette(value.palette),types,field:{width:f.width,height:f.height,layers}};
 }
 
 
