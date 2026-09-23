@@ -292,7 +292,7 @@ function fieldLayerId() {
   return 'field-layer-'+crypto.randomUUID();
 }
 function makeLayer(name, cells, id = fieldLayerId()) {
-  return { id, name, visible:true, cells, offset:{x:0,y:0} };
+  return { id, name, visible:true, cells, offset:{x:0,y:0}, blend:'normal' };
 }
 function setLayerOffset(layer, field, x, y) {
   const prev=layerGrid(field, layer.offset), next=layerGrid(field, {x,y});
@@ -409,7 +409,9 @@ function validateProject(value) {
       if(!layer||!layerId.test(layer.id)||seen.has(layer.id)||typeof layer.name!=='string'||layer.name.length>40||(layer.visible!==true&&layer.visible!==false))fail();
       seen.add(layer.id);
       const offset=readOffset(layer.offset);
-      return {id:layer.id,name:layer.name,visible:layer.visible,cells:readCells(layer.cells,offset),offset};
+      const blend=layer.blend===undefined?'normal':layer.blend;
+      if(blend!=='normal'&&blend!=='multiply'&&blend!=='add')fail();
+      return {id:layer.id,name:layer.name,visible:layer.visible,cells:readCells(layer.cells,offset),offset,blend};
     });
   }
   return {format:'dot-map',version:3,name:value.name,tileSize:value.tileSize,palette:normalizePalette(value.palette),types,field:{width:f.width,height:f.height,layers}};

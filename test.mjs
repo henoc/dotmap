@@ -124,7 +124,11 @@ saved.field.layers[0].offset.x=16;assert.throws(()=>validateProject(saved));
 const legacySource=createProject();
 const legacy={format:'dot-map',version:2,name:legacySource.name,tileSize:legacySource.tileSize,palette:legacySource.palette,types:legacySource.types,field:{width:legacySource.field.width,height:legacySource.field.height,cells:legacySource.field.layers[0].cells.slice()}};
 const migrated=validateProject(JSON.parse(JSON.stringify(legacy)));
-assert.equal(migrated.version,3);assert.equal(migrated.field.layers.length,1);assert.equal(migrated.field.layers[0].visible,true);
+assert.equal(migrated.version,3);assert.equal(migrated.field.layers.length,1);assert.equal(migrated.field.layers[0].visible,true);assert.equal(migrated.field.layers[0].blend,'normal');
+const blendProject=createProject();delete blendProject.field.layers[0].blend;
+assert.equal(validateProject(blendProject).field.layers[0].blend,'normal');
+blendProject.field.layers[0].blend='multiply';
+assert.equal(validateProject(JSON.parse(JSON.stringify(blendProject))).field.layers[0].blend,'multiply');
 assert.equal(JSON.stringify(migrated.field.layers[0].cells),JSON.stringify(legacy.field.cells));
 assert.match(migrated.field.layers[0].id,/^field-layer-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 const roundTrip=createProject();
@@ -137,6 +141,7 @@ for(const corrupt of [
   p=>p.types[0].styleBits='invalid',p=>p.tileSize=999,p=>p.field.width=0,
   p=>p.types[0].tiles[2]=Array(256).fill(null),p=>p.types[0].tiles[0]=['#123456'],
   p=>p.types[0].tiles[0]=Array(256).fill('red'),p=>p.types[0].styleBits=256,p=>p.types[0].styleBits=-1,p=>p.types[0].styleBits=1.5,
+  p=>p.field.layers[0].blend='screen',
 ]) {
   const invalid=createProject();corrupt(invalid);assert.throws(()=>validateProject(invalid));
 }
