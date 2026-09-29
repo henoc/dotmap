@@ -309,7 +309,7 @@ function renderGraphics() {
   canvas.width=canvas.height=size;canvas.style.width=canvas.style.height=size*zoom+'px';
   $('canvas-wrap').classList.toggle('inactive',!match);
   if(match)paintPixels(canvas,tilePixels(match.type,size,match.mask),size);
-  $('grid-overlay').style.backgroundSize=`${zoom}px ${zoom}px`;
+  const gridStep=Math.max(1,Math.floor($('grid-step').value)||1)*zoom;$('grid-overlay').style.backgroundSize=`${gridStep}px ${gridStep}px`;
   $('canvas-info').textContent=`${size} × ${size} px`;$('zoom-label').textContent=zoom*100+'%';
   $('zoom-out').disabled=zoom<=2;$('zoom-in').disabled=zoom>=32;
   $('undo').disabled=!undoStack.length;$('redo').disabled=!redoStack.length;$('clear').disabled=!match||!Object.hasOwn(match.type.tiles,match.mask);
@@ -751,7 +751,9 @@ $('style-form').onsubmit=event=>{
 };
 $('add-type').onclick=()=>{
   if(project.types.length>=32)return;
-  change(()=>{const id=typeId();const type=makeType(id,'マップチップ '+(project.types.length+1),DEFAULT_PALETTE[(project.types.length*3)%DEFAULT_PALETTE.length]);project.types.push(type);selection={typeId:id,mask:0,cell:null,layerId:selection.layerId};$('used-only').checked=false;});
+  const used=new Set(project.types.map(t=>t.color)), pick=i=>DEFAULT_PALETTE[(i*3)%DEFAULT_PALETTE.length];
+  const color=DEFAULT_PALETTE.map((_,k)=>pick(project.types.length+k)).find(c=>!used.has(c))||pick(project.types.length);
+  change(()=>{const id=typeId();const type=makeType(id,'マップチップ '+(project.types.length+1),color);project.types.push(type);selection={typeId:id,mask:0,cell:null,layerId:selection.layerId};$('used-only').checked=false;});
   toast('新しい種類を追加しました。タイル一覧から描き始められます。');
 };
 $('import-atlas').onclick=()=>$('atlas-file').click();
@@ -807,6 +809,7 @@ $('undo').onclick=()=>history('undo');$('redo').onclick=()=>history('redo');
 for(const [id,kind] of [['flip-x','flipX'],['flip-y','flipY'],['rotate-cw','rotate90'],['rotate-ccw','rotate270']]) $(id).onclick=()=>transformSelection(kind);
 $('used-only').onchange=()=>{renderTileList();renderGraphics();};
 $('grid').onclick=()=>{const visible=$('grid').getAttribute('aria-pressed')!=='true';$('grid').setAttribute('aria-pressed',visible);$('grid-overlay').hidden=!visible;};
+$('grid-step').oninput=renderGraphics;
 $('map-grid-toggle').onclick=()=>{const visible=$('map-grid-toggle').getAttribute('aria-pressed')!=='true';$('map-grid-toggle').setAttribute('aria-pressed',visible);$('map-grid').hidden=!visible;};
 $('zoom-in').onclick=()=>{zoom=Math.min(32,zoom+2);renderGraphics();};$('zoom-out').onclick=()=>{zoom=Math.max(2,zoom-2);renderGraphics();};
 $('export').onclick=()=>exportPNG();
