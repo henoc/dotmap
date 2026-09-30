@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import { deflateSync } from 'node:zlib';
 
 const core = readFileSync(new URL('./core.js', import.meta.url), 'utf8');
-const { drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, makeLayer, layerGrid, setLayerOffset, layerCellOrigin, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, shadeStep, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, transformRect, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM } = runInNewContext(core + '\n({drawLine, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, makeLayer, layerGrid, setLayerOffset, layerCellOrigin, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, shadeStep, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, transformRect, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM})', {TextEncoder, TextDecoder, crypto});
+const { drawLine, drawRect, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, makeLayer, layerGrid, setLayerOffset, layerCellOrigin, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, shadeStep, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, transformRect, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM, makeStamp, stampAnchor } = runInNewContext(core + '\n({drawLine, drawRect, floodFill, patternMask, patterns, createProject, resolveCell, tilePixels, makeType, makeLayer, layerGrid, setLayerOffset, layerCellOrigin, resizeField, removeType, validateProject, DEFAULT_PALETTE, PALETTE_PRESETS, matchPalettePreset, normalizePalette, parsePaletteText, serializePaletteHex, paletteFromPixels, mergePalette, nearestPaletteColor, nearestLabColor, nearestLumaColor, shadeStep, snapTypeToPalette, BIT_ORDER, setStyleBits, discardedMasks, atlasLayout, crc32, pngChunk, embedAtlasMetadata, readAtlasMetadata, importAtlas, TILE_TRANSFORMS, transformMask, transformPixels, transformRect, supportedSymmetry, symmetryTransforms, derivedTile, materializeTile, symmetryTargets, bakeSymmetricTiles, centerSourceMask, CENTER_TRANSFORM, makeStamp, stampAnchor})', {TextEncoder, TextDecoder, crypto});
 const pixels = Array(64).fill(null);
 drawLine(pixels, 8, [0,0], [7,7], '#123456');
 assert.equal(pixels.filter(Boolean).length, 8, 'Fast diagonal strokes must be continuous');
@@ -474,4 +474,40 @@ for(const invalid of [1,0,'true',null]) {
   assert.throws(()=>validateProject(data));
 }
 console.log('Center-fill checks passed: source priority, symmetry/saved override, copy-on-write, other styles and JSON.');
+}
+
+{
+// 2×2 pictures: one 16×16 tile for an 8px project, anchored at the top-left cell.
+const project=createProject(8), stamp=makeStamp('tree','木','#526449');project.types.push(stamp);
+assert.equal(tilePixels(stamp,8,0).length,256);
+const pixels=Array(256).fill(null);pixels[255]='#123456';stamp.tiles[0]=pixels;
+project.field={width:4,height:4,layers:[makeLayer('上',Array(16).fill(null))]};
+const layer=project.field.layers[0];layer.cells[5]='tree';
+assert.equal(resolveCell(project,5,layer).mask,0);
+for(const [index,anchor] of [[5,5],[6,5],[9,5],[10,5],[4,null],[11,null],[0,null]])assert.equal(stampAnchor(project,layer,index),anchor);
+layer.cells[10]='tree';
+assert.equal(stampAnchor(project,layer,10),10,'The later anchor is on top');
+const restored=validateProject(JSON.parse(JSON.stringify(project)));
+assert.equal(restored.types.at(-1).span,2);assert.equal(restored.types.at(-1).tiles[0][255],'#123456');
+const legacy=JSON.parse(JSON.stringify(project));legacy.types.forEach(t=>delete t.span);legacy.types.at(-1).tiles={};
+assert.equal(validateProject(legacy).types.at(-1).span,1);
+for(const bad of [[2,255],[3,0],[0,0]]) {
+  const data=JSON.parse(JSON.stringify(project));[data.types.at(-1).span,data.types.at(-1).styleBits]=bad;data.types.at(-1).tiles={};
+  assert.throws(()=>validateProject(data));
+}
+const layout=atlasLayout(project), entry=layout.metadata.types.at(-1);
+assert.deepEqual(JSON.parse(JSON.stringify(entry)),{id:'tree',name:'木',styleBits:0,span:2,tiles:[{mask:0,x:0,y:layout.height/8-2}]});
+assert.equal(Object.hasOwn(layout.metadata.types[0],'span'),false,'Regular types keep the old atlas shape');
+const rgba=new Uint8Array(layout.width*layout.height*4), at=((entry.tiles[0].y*8+15)*layout.width+15)*4;
+rgba.set([0x12,0x34,0x56,255],at);
+const target=createProject(8), [added]=importAtlas(target,{...layout.metadata,types:[entry]},rgba,layout.width,layout.height);
+assert.equal(added.span,2);assert.equal(added.tiles[0][255],'#123456');assert.equal(added.tiles[0].length,256);
+console.log('Large picture checks passed: anchor lookup, JSON, atlas export/import.');
+}
+
+{
+const box=Array(64).fill(null);drawRect(box,8,[6,5],[1,2],'#123456');
+for(let y=0;y<8;y++)for(let x=0;x<8;x++)assert.equal(box[y*8+x],(x===1||x===6)&&y>=2&&y<=5||(y===2||y===5)&&x>=1&&x<=6?'#123456':null);
+const dot=Array(64).fill(null);drawRect(dot,8,[3,3],[3,3],'#123456');assert.equal(dot.filter(Boolean).length,1);
+console.log('Rectangle checks passed.');
 }

@@ -15,6 +15,9 @@ let paletteIndex=2, importedPalette=[], paletteReadId=0, exporting=false, pendin
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function currentType() { return project.types.find(t=>t.id===selection.typeId)||project.types[0]; }
 function activeLayer() { return project.field.layers.find(l=>l.id===selection.layerId)||project.field.layers.at(-1); }
+function pixelSize(type) { return project.tileSize*(type.span||1); }
+// Side of the pixel surface being edited: a 2×2 picture is edited as one canvas.
+function surfaceSize() { const match=selectedTile();return pixelSize(match?match.type:currentType()); }
 function selectedTile() {
   if(selection.cell!==null) return resolveCell(project,selection.cell,activeLayer());
   return {type:currentType(),mask:selection.mask};
@@ -66,8 +69,8 @@ function paintPixels(target, pixels, size) {
   pixels.forEach((value,index)=>{if(value){context.fillStyle=value;context.fillRect(index%size,Math.floor(index/size),1,1);}});
 }
 function tileCanvas(type, mask) {
-  const target=document.createElement('canvas');target.width=target.height=project.tileSize;
-  paintPixels(target,tilePixels(type,project.tileSize,mask),project.tileSize);return target;
+  const target=document.createElement('canvas');target.width=target.height=pixelSize(type);
+  paintPixels(target,tilePixels(type,project.tileSize,mask),pixelSize(type));return target;
 }
 function drawMap(target) {
   const {width,height,layers}=project.field, size=project.tileSize;
@@ -78,8 +81,9 @@ function drawMap(target) {
   for(const layer of layers) {
     if(!layer.visible)continue;
     context.globalCompositeOperation=composite[layer.blend]||'source-over';
-    layer.cells.forEach((id,index)=>{
-      const match=resolveCell(project,index,layer);if(!match)return;
+    // Large pictures overhang later cells, so they draw after the layer's regular tiles.
+    for(const stamps of [false,true])layer.cells.forEach((id,index)=>{
+      const match=resolveCell(project,index,layer);if(!match||(match.type.span>1)!==stamps)return;
       const key=match.type.id+':'+match.mask;
       if(!cache.has(key))cache.set(key,tileCanvas(match.type,match.mask));
       const origin=layerCellOrigin(project.field,layer,index,size);
@@ -193,7 +197,8 @@ function renderTypes() {
     input.closest('label').title=input.disabled?'この接続スタイルでは使えません。':bit===4?'90°・180°・270°の回転を許可します。':'左右・上下を両方許可すると180°反転も使います。';
   });
   $('center-fill').checked=Boolean(currentType().centerFill);
-  $('delete-type').disabled=project.types.length===1;$('add-type').disabled=project.types.length>=32;
+  $('style-options').hidden=currentType().span>1;
+  $('delete-type').disabled=project.types.length===1;$('add-type').disabled=$('add-stamp').disabled=project.types.length>=32;
 }
 function renderTileList() {
   const type=currentType(), counts=usageCounts(type.id), list=patterns(type.styleBits);
@@ -238,11 +243,11 @@ function refreshFieldGrid(match) {
   const types=new Map(project.types.map((type,index)=>[type.id,{...type,number:index+1}]));
   const layer=activeLayer();
   fieldButtons.forEach((button,index)=>{
-    const type=types.get(layer.cells[index]);
-    button.textContent=type?type.number:'·';button.style.background=type?type.color:'';
+    const type=types.get(layer.cells[index]), anchor=type?null:stampAnchor(project,layer,index), cover=anchor===null?null:types.get(layer.cells[anchor]);
+    button.textContent=type?type.number:cover?'':'·';button.style.background=type?type.color:cover?cover.color:'';
     const place=cellPlace(index, layer);
-    button.classList.toggle('empty',!type);button.classList.toggle('overflow',place.outside);button.setAttribute('aria-pressed',selection.cell===index);
-    button.setAttribute('aria-label',`列${place.col} 行${place.row}：${type?type.name:'空'}${place.outside?'（はみ出し）':''}`);
+    button.classList.toggle('empty',!type&&!cover);button.classList.toggle('covered',Boolean(cover));button.classList.toggle('overflow',place.outside);button.setAttribute('aria-pressed',selection.cell===index);
+    button.setAttribute('aria-label',`列${place.col} 行${place.row}：${type?type.name:cover?cover.name+'の一部':'空'}${place.outside?'（はみ出し）':''}`);
     const cellMatch=match&&layer.cells[index]===match.type.id?resolveCell(project,index,layer):null;
     button.classList.toggle('related',Boolean(cellMatch&&cellMatch.mask===match.mask));
   });
@@ -305,12 +310,12 @@ function renderLayers() {
   }
 }
 function renderGraphics() {
-  normalizeSelection();const match=selectedTile(),size=project.tileSize;
-  canvas.width=canvas.height=size;canvas.style.width=canvas.style.height=size*zoom+'px';
+  normalizeSelection();const match=selectedTile(),size=project.tileSize,surface=surfaceSize();
+  canvas.width=canvas.height=surface;canvas.style.width=canvas.style.height=surface*zoom+'px';
   $('canvas-wrap').classList.toggle('inactive',!match);
-  if(match)paintPixels(canvas,tilePixels(match.type,size,match.mask),size);
+  if(match)paintPixels(canvas,tilePixels(match.type,size,match.mask),surface);
   const gridStep=Math.max(1,Math.floor($('grid-step').value)||1)*zoom;$('grid-overlay').style.backgroundSize=`${gridStep}px ${gridStep}px`;
-  $('canvas-info').textContent=`${size} × ${size} px`;$('zoom-label').textContent=zoom*100+'%';
+  $('canvas-info').textContent=`${surface} × ${surface} px`;$('zoom-label').textContent=zoom*100+'%';
   $('zoom-out').disabled=zoom<=2;$('zoom-in').disabled=zoom>=32;
   $('undo').disabled=!undoStack.length;$('redo').disabled=!redoStack.length;$('clear').disabled=!match||!Object.hasOwn(match.type.tiles,match.mask);
   for(const id of ['flip-x','flip-y','rotate-cw','rotate-ccw']) $(id).disabled=!match;
@@ -323,10 +328,10 @@ function renderGraphics() {
     const origin=derived?`タイル #${String(list.indexOf(derived.sourceMask)+1).padStart(2,'0')} の${derived.transform.label}から導出`:Object.hasOwn(currentType().tiles,mask)?'実体タイル':'未編集';
     card.title=origin;card.setAttribute('aria-label',`タイル ${list.indexOf(mask)+1}、パターン ${mask}、${counts.get(mask)||0}マスで使用、${origin}`);
     card.querySelector('.usage').textContent=counts.get(mask)||'';
-    paintPixels(card.querySelector('canvas'),tilePixels(currentType(),size,mask),size);
+    paintPixels(card.querySelector('canvas'),tilePixels(currentType(),size,mask),pixelSize(currentType()));
   }
   $('tile-title').textContent=match?`${match.type.name} / タイル #${String(list.indexOf(match.mask)+1).padStart(2,'0')}`:'空のマス';
-  $('tile-subtitle').textContent=match?`${styleLabel(match.type.styleBits)} · ${list.length}枚`:'「配置」でマップチップを置いてください';
+  $('tile-subtitle').textContent=match?(match.type.span>1?`${match.type.span}×${match.type.span}マスの絵 · 左上のマスに置く`:`${styleLabel(match.type.styleBits)} · ${list.length}枚`):'「配置」でマップチップを置いてください';
   const derived=match&&derivedTile(match.type,match.mask);
   $('tile-origin').textContent=!match?'':derived?`導出：タイル #${String(list.indexOf(derived.sourceMask)+1).padStart(2,'0')} → ${derived.transform.label}（描くと独立）`:Object.hasOwn(match.type.tiles,match.mask)?'実体タイル':'未編集';
   $('tile-origin').classList.toggle('derived',Boolean(derived));
@@ -349,7 +354,7 @@ function renderAll() {
   normalizeSelection();$('filename').value=project.name;
   renderTypes();renderLayers();renderTileList();renderFieldGrid();renderPalette();renderGraphics();
 }
-function fit() { zoom=Math.max(2,Math.min(20,Math.floor(Math.min($('stage').clientWidth-56,$('stage').clientHeight-56)/project.tileSize))); }
+function fit() { zoom=Math.max(2,Math.min(20,Math.floor(Math.min($('stage').clientWidth-56,$('stage').clientHeight-56)/surfaceSize()))); }
 function setColor(value, index=project.palette.indexOf(value.toLowerCase())) {
   if(!/^#[0-9a-f]{6}$/i.test(value))return false;
   color=value.toLowerCase();$('color').value=color;$('hex').value=color.toUpperCase();
@@ -390,7 +395,7 @@ async function readPalettePNG(file) {
     return paletteFromPixels(context.getImageData(0,0,canvas.width,canvas.height).data);
   } finally {URL.revokeObjectURL(url);}
 }
-const drawTools=new Set(['pen','line','fill']);
+const drawTools=new Set(['pen','line','rect','fill']);
 function ink(base) {
   if(tool==='eraser')return null;
   if(!shade||!drawTools.has(tool))return color;
@@ -403,11 +408,11 @@ function setTool(value) {
   if(value!=='select')canvas.style.cursor='';
 }
 function pointOnCanvas(event) {
-  const r=canvas.getBoundingClientRect();return [Math.floor((event.clientX-r.left)/r.width*project.tileSize),Math.floor((event.clientY-r.top)/r.height*project.tileSize)];
+  const r=canvas.getBoundingClientRect(), s=surfaceSize();return [Math.floor((event.clientX-r.left)/r.width*s),Math.floor((event.clientY-r.top)/r.height*s)];
 }
-function inside([x,y]) { return x>=0&&y>=0&&x<project.tileSize&&y<project.tileSize; }
+function inside([x,y]) { const s=surfaceSize();return x>=0&&y>=0&&x<s&&y<s; }
 function clampPoint([x,y]) {
-  const s=project.tileSize;return [Math.max(0,Math.min(s-1,x)),Math.max(0,Math.min(s-1,y))];
+  const s=surfaceSize();return [Math.max(0,Math.min(s-1,x)),Math.max(0,Math.min(s-1,y))];
 }
 function rectFromPoints(a,b) {
   const x=Math.min(a[0],b[0]), y=Math.min(a[1],b[1]);
@@ -479,7 +484,7 @@ async function readOsClipboard() {
 function copyMarquee(quiet=false) {
   const match=selectedTile();
   if(!match||!marquee){if(!quiet)toast('先に範囲を選択してください');return false;}
-  clipboard={w:marquee.w,h:marquee.h,pixels:(marquee.pixels||extractRect(tilePixels(match.type,project.tileSize,match.mask),project.tileSize,marquee)).slice()};
+  clipboard={w:marquee.w,h:marquee.h,pixels:(marquee.pixels||extractRect(tilePixels(match.type,project.tileSize,match.mask),surfaceSize(),marquee)).slice()};
   writeOsClipboard(clipboard);
   if(!quiet)toast(`${marquee.w}×${marquee.h} をコピーしました`);
   return true;
@@ -487,7 +492,7 @@ function copyMarquee(quiet=false) {
 function cutMarquee() {
   if(!copyMarquee(true))return;
   const rect=marquee;
-  change(()=>{const match=selectedTile();if(match)stampRect(editablePixels(match),project.tileSize,null,rect.x,rect.y,rect.w,rect.h);});
+  change(()=>{const match=selectedTile();if(match)stampRect(editablePixels(match),surfaceSize(),null,rect.x,rect.y,rect.w,rect.h);});
   toast('切り取りました');
 }
 async function pasteMarquee() {
@@ -496,17 +501,17 @@ async function pasteMarquee() {
   const clip=await readOsClipboard()||clipboard;
   if(!clip){toast('コピーしたものがありません');return;}
   clipboard=clip;
-  const size=project.tileSize;
+  const size=surfaceSize();
   const x=Math.max(1-clip.w,Math.min(size-1,marquee?marquee.x:0));
   const y=Math.max(1-clip.h,Math.min(size-1,marquee?marquee.y:0));
-  const ground=tilePixels(match.type,size,match.mask).slice();
+  const ground=tilePixels(match.type,project.tileSize,match.mask).slice();
   change(()=>stampRect(editablePixels(match),size,clip.pixels,x,y,clip.w,clip.h));
   marquee={x,y,w:clip.w,h:clip.h,pixels:clip.pixels.slice(),ground};
   setTool('select');updateMarquee();
 }
 function transformSelection(kind) {
   const match=selectedTile();if(!match)return;
-  const size=project.tileSize;
+  const size=surfaceSize();
   if(!marquee) {
     change(()=>{
       const pixels=editablePixels(match), next=transformRect(pixels,size,size,kind);
@@ -514,7 +519,7 @@ function transformSelection(kind) {
     });
     return;
   }
-  const rect=marquee, source=(rect.pixels||extractRect(tilePixels(match.type,size,match.mask),size,rect)).slice();
+  const rect=marquee, source=(rect.pixels||extractRect(tilePixels(match.type,project.tileSize,match.mask),size,rect)).slice();
   const next=transformRect(source,rect.w,rect.h,kind);
   const x=rect.x+Math.floor((rect.w-next.w)/2), y=rect.y+Math.floor((rect.h-next.h)/2);
   change(()=>{
@@ -528,10 +533,10 @@ function transformSelection(kind) {
 function eraseMarquee() {
   const match=selectedTile();if(!match||!marquee)return;
   const rect=marquee;
-  change(()=>stampRect(editablePixels(match),project.tileSize,null,rect.x,rect.y,rect.w,rect.h));
+  change(()=>stampRect(editablePixels(match),surfaceSize(),null,rect.x,rect.y,rect.w,rect.h));
 }
 function applyMove(g, point) {
-  const size=project.tileSize;
+  const size=surfaceSize();
   const x=Math.max(1-g.w,Math.min(size-1,point[0]-g.grab[0]));
   const y=Math.max(1-g.h,Math.min(size-1,point[1]-g.grab[1]));
   if(!g.moved) {
@@ -572,7 +577,7 @@ canvas.addEventListener('pointerdown',event=>{
   if(gesture||event.button!==0)return;
   const point=pointOnCanvas(event),match=selectedTile();if(!match||!inside(point))return;event.preventDefault();
   if(tool==='picker'||event.altKey) {
-    const value=tilePixels(match.type,project.tileSize,match.mask)[point[1]*project.tileSize+point[0]];
+    const value=tilePixels(match.type,project.tileSize,match.mask)[point[1]*surfaceSize()+point[0]];
     if(value){setColor(value);if(!drawTools.has(tool))setTool(lastDrawTool);}
     else setTool('eraser');
     return;
@@ -588,20 +593,20 @@ canvas.addEventListener('pointerdown',event=>{
   }
   const before=snapshot();
   if(tool==='fill') {
-    const source=tilePixels(match.type,project.tileSize,match.mask)[point[1]*project.tileSize+point[0]];
+    const source=tilePixels(match.type,project.tileSize,match.mask)[point[1]*surfaceSize()+point[0]];
     const paint=shade?shadeStep(source,project.palette,shade):color;
     if(source===paint)return;
-    floodFill(editablePixels(match),project.tileSize,...point,paint);commit(before,false);return;
+    floodFill(editablePixels(match),surfaceSize(),...point,paint);commit(before,false);return;
   }
   const pixels=editablePixels(match), base=pixels.slice();
-  if(tool==='line') {
-    gesture={kind:'line',pointerId:event.pointerId,element:canvas,before,start:point,match,base};
+  if(tool==='line'||tool==='rect') {
+    gesture={kind:'line',shape:tool==='rect'?drawRect:drawLine,pointerId:event.pointerId,element:canvas,before,start:point,match,base};
     canvas.setPointerCapture(event.pointerId);
-    drawLine(pixels,project.tileSize,point,point,ink(base),brush);renderGraphics();
+    drawLine(pixels,surfaceSize(),point,point,ink(base),brush);renderGraphics();
     return;
   }
   gesture={kind:'pixel',pointerId:event.pointerId,element:canvas,before,previous:point,match,base};canvas.setPointerCapture(event.pointerId);
-  drawLine(pixels,project.tileSize,point,point,ink(base),brush);renderGraphics();
+  drawLine(pixels,surfaceSize(),point,point,ink(base),brush);renderGraphics();
 });
 canvas.addEventListener('pointermove',event=>{
   const point=pointOnCanvas(event),valid=inside(point);$('coordinates').textContent=valid?`X: ${point[0]}　Y: ${point[1]}`:'X: —　Y: —';
@@ -612,25 +617,29 @@ canvas.addEventListener('pointermove',event=>{
   }
   if(gesture.kind==='move') {applyMove(gesture,point);return;}
   if(gesture.kind==='line') {
-    const size=project.tileSize, end=valid?point:[Math.max(0,Math.min(size-1,point[0])),Math.max(0,Math.min(size-1,point[1]))];
+    const size=surfaceSize(), end=valid?point:[Math.max(0,Math.min(size-1,point[0])),Math.max(0,Math.min(size-1,point[1]))];
     const pixels=editablePixels(gesture.match);
     for(let i=0;i<pixels.length;i++)pixels[i]=gesture.base[i];
-    drawLine(pixels,size,gesture.start,end,ink(gesture.base),brush);renderGraphics();
+    gesture.shape(pixels,size,gesture.start,end,ink(gesture.base),brush);renderGraphics();
     return;
   }
   if(gesture.kind!=='pixel')return;
   if(!valid){gesture.previous=null;return;}
-  drawLine(editablePixels(gesture.match),project.tileSize,gesture.previous||point,point,ink(gesture.base),brush);gesture.previous=point;renderGraphics();
+  drawLine(editablePixels(gesture.match),surfaceSize(),gesture.previous||point,point,ink(gesture.base),brush);gesture.previous=point;renderGraphics();
 });
 function fieldCellAt(event) {
   const target=document.elementFromPoint(event.clientX,event.clientY)?.closest('[data-cell]');
   return target&&$('field-grid').contains(target)?Number(target.dataset.cell):null;
 }
 function selectCell(index) {
-  finishGesture();selection.cell=index;normalizeSelection();renderAll();
+  finishGesture();selection.cell=stampAnchor(project,activeLayer(),index)??index;normalizeSelection();renderAll();
 }
 function paintFieldCell(index) {
-  activeLayer().cells[index]=fieldTool==='erase'?null:selection.typeId;
+  const layer=activeLayer(), anchor=stampAnchor(project,layer,index);
+  if(fieldTool==='erase') {layer.cells[anchor??index]=null;selection.cell=index;normalizeSelection();return;}
+  // Dragging a large picture skips cells it already covers instead of stacking copies.
+  if(currentType().span>1&&anchor!==null&&layer.cells[anchor]===selection.typeId)return;
+  layer.cells[index]=selection.typeId;
   selection.cell=index;normalizeSelection();
 }
 function keyboardFieldEdit(index) {
@@ -756,6 +765,11 @@ $('add-type').onclick=()=>{
   change(()=>{const id=typeId();const type=makeType(id,'マップチップ '+(project.types.length+1),color);project.types.push(type);selection={typeId:id,mask:0,cell:null,layerId:selection.layerId};$('used-only').checked=false;});
   toast('新しい種類を追加しました。タイル一覧から描き始められます。');
 };
+$('add-stamp').onclick=()=>{
+  if(project.types.length>=32)return;
+  change(()=>{const id=typeId();project.types.push(makeStamp(id,'大きな絵 '+(project.types.length+1),DEFAULT_PALETTE[(project.types.length*3)%DEFAULT_PALETTE.length]));selection={typeId:id,mask:0,cell:null,layerId:selection.layerId};$('used-only').checked=false;});
+  toast('2×2マスの絵を追加しました。フィールドでは左上のマスに置きます。地面とは別のレイヤーに置くのがおすすめです。');
+};
 $('import-atlas').onclick=()=>$('atlas-file').click();
 $('atlas-file').onchange=async()=>{
   const file=$('atlas-file').files[0];$('atlas-file').value='';if(!file)return;
@@ -853,13 +867,13 @@ $('palette-form').onsubmit=event=>{
 $('palette-snap').onclick=()=>{
   if(!project.palette.length)return;
   finishGesture();
-  const type=currentType(), match=selectedTile(), size=project.tileSize;
+  const type=currentType(), match=selectedTile(), size=project.tileSize, surface=pixelSize(type);
   for(const mode of ['rgb','lab','luma']) {
     const preview=clone(type);
     snapTypeToPalette(preview,project.palette,mode);
     const canvas=$(`snap-preview-${mode}`);
-    canvas.width=canvas.height=size;
-    paintPixels(canvas,match?tilePixels(preview,size,match.mask):[],size);
+    canvas.width=canvas.height=surface;
+    paintPixels(canvas,match?tilePixels(preview,size,match.mask):[],surface);
   }
   document.querySelectorAll('#snap-choices [data-snap]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.snap===snapMode));
   $('snap-dialog').showModal();
@@ -994,14 +1008,14 @@ document.addEventListener('keydown',event=>{
     else if(key==='v'){event.preventDefault();if(!event.repeat)pasteMarquee();}
     else if(key==='a'){
       event.preventDefault();
-      if(!event.repeat&&selectedTile()){setTool('select');const s=project.tileSize;marquee={x:0,y:0,w:s,h:s};updateMarquee();}
+      if(!event.repeat&&selectedTile()){setTool('select');const s=surfaceSize();marquee={x:0,y:0,w:s,h:s};updateMarquee();}
     }
     return;
   }
   if(gesture)return;
   if(key==='escape'){event.preventDefault();marquee=null;canvas.style.cursor='';updateMarquee();return;}
   if((key==='delete'||key==='backspace')&&marquee){event.preventDefault();eraseMarquee();return;}
-  const shortcut={b:'pen',l:'line',e:'eraser',g:'fill',i:'picker',m:'select'}[key];if(!event.altKey&&shortcut){event.preventDefault();setTool(shortcut);}
+  const shortcut={b:'pen',l:'line',u:'rect',e:'eraser',g:'fill',i:'picker',m:'select'}[key];if(!event.altKey&&shortcut){event.preventDefault();setTool(shortcut);}
 });
 let loadWarning='';
 try {const data=localStorage.getItem(storageKey);if(data){project=validateProject(JSON.parse(data));selection={typeId:project.types[0].id,mask:0,cell:null,layerId:project.field.layers.at(-1).id};}}

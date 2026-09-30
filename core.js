@@ -128,6 +128,10 @@ function drawLine(pixels, size, from, to, color, brush = 1) {
     if (e2 <= dx) { error += dx; y += sy; }
   }
 }
+function drawRect(pixels, size, from, to, color, brush = 1) {
+  const [x0,y0]=from, [x1,y1]=to;
+  for(const [a,b] of [[[x0,y0],[x1,y0]],[[x1,y0],[x1,y1]],[[x1,y1],[x0,y1]],[[x0,y1],[x0,y0]]])drawLine(pixels,size,a,b,color,brush);
+}
 function floodFill(pixels, size, x, y, color) {
   const target = pixels[y*size+x];
   if (target === color) return;
@@ -310,7 +314,21 @@ function layerCellOrigin(field, layer, index, tileSize) {
   return {x:(col-grid.padX)*tileSize+grid.x,y:(row-grid.padY)*tileSize+grid.y};
 }
 function makeType(id, name, color, seed = false) {
-  return { id, name, color, seed, styleBits:255, symmetry:7, centerFill:true, tiles:{} };
+  return { id, name, color, seed, styleBits:255, symmetry:7, centerFill:true, span:1, tiles:{} };
+}
+// A picture spanning span×span cells: one unconnected tile, stored only at its top-left cell.
+function makeStamp(id, name, color, span = 2) {
+  const type=makeType(id,name,color);type.styleBits=0;type.symmetry=0;type.centerFill=false;type.span=span;return type;
+}
+// Topmost span>1 picture covering index (the later anchor draws on top), or null.
+function stampAnchor(project, layer, index) {
+  const grid=layerGrid(project.field, layer.offset), x=index%grid.cols, y=Math.floor(index/grid.cols);
+  for(const [dx,dy] of [[0,0],[-1,0],[0,-1],[-1,-1]]) {
+    const nx=x+dx, ny=y+dy;if(nx<0||ny<0)continue;
+    const type=project.types.find(t=>t.id===layer.cells[ny*grid.cols+nx]);
+    if(type&&type.span>1)return ny*grid.cols+nx;
+  }
+  return null;
 }
 function createProject(tileSize = 16) {
   const rows = ['11111111','11122211','11222211','11221111','11331111','13311111','33311111','11111111'];
@@ -329,7 +347,7 @@ function tilePixels(type, tileSize, mask) {
   if (saved) return saved;
   const derived=derivedTile(type,mask);
   if(derived)return transformPixels(type.tiles[derived.sourceMask],tileSize,derived.transform);
-  const pixels = Array(tileSize*tileSize).fill(null);
+  const side=tileSize*(type.span||1), pixels = Array(side*side).fill(null);
   if (!type.seed) return pixels;
   const dark=shiftColor(type.color,-24), light=shiftColor(type.color,22);
   for(let y=0;y<tileSize;y++) for(let x=0;x<tileSize;x++) {
@@ -376,10 +394,12 @@ function validateProject(value) {
     type.symmetry=t.symmetry===undefined?0:t.symmetry;
     if(t.centerFill!==undefined&&t.centerFill!==true&&t.centerFill!==false)fail();
     type.centerFill=t.centerFill===true;
+    if(t.span!==undefined&&t.span!==1&&!(t.span===2&&t.styleBits===0))fail();
+    type.span=t.span||1;
     const bank=t.tiles, valid=patterns(type.styleBits);
     if(typeof bank!=='object'||Array.isArray(bank))fail();
     for(const [key,pixels] of Object.entries(bank)) {
-      if(!valid.includes(Number(key))||String(Number(key))!==key||!Array.isArray(pixels)||pixels.length!==value.tileSize**2||!pixels.every(p=>p===null||isColor(p)))fail();
+      if(!valid.includes(Number(key))||String(Number(key))!==key||!Array.isArray(pixels)||pixels.length!==(value.tileSize*type.span)**2||!pixels.every(p=>p===null||isColor(p)))fail();
       type.tiles[key]=pixels.map(p=>p===null?null:p.toLowerCase());
     }
     return type;
@@ -421,6 +441,7 @@ function validateProject(value) {
 function atlasLayout(project, columns=8) {
   let row=0;
   const types=project.types.map(type=>{
+    if(type.span>1){const entry={id:type.id,name:type.name,styleBits:0,span:type.span,tiles:[{mask:0,x:0,y:row}]};row+=type.span;return entry;}
     const tiles=patterns(type.styleBits).map((mask,index)=>({mask,x:index%columns,y:row+Math.floor(index/columns)}));
     row+=Math.ceil(tiles.length/columns);
     return {id:type.id,name:type.name,styleBits:type.styleBits,tiles};
@@ -474,6 +495,7 @@ function readAtlasMetadata(png) {
       if(!value||value.format!=='dot-map-atlas'||value.version!==1||![8,16,32,64].includes(value.tileSize)||!Number.isInteger(value.columns)||value.columns<1||!Array.isArray(value.types))fail();
       for(const t of value.types) {
         if(!t||typeof t.id!=='string'||typeof t.name!=='string'||!Number.isInteger(t.styleBits)||t.styleBits<0||t.styleBits>255||!Array.isArray(t.tiles))fail();
+        if(t.span!==undefined&&t.span!==1&&!(t.span===2&&t.styleBits===0))fail();
         if(!t.tiles.every(tile=>tile&&Number.isInteger(tile.mask)&&Number.isInteger(tile.x)&&Number.isInteger(tile.y)&&tile.x>=0&&tile.y>=0))fail();
       }
       return value;
@@ -491,15 +513,16 @@ function importAtlas(project, metadata, rgba, width, height) {
     let id=entry.id.replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,48)||'type';
     for(let n=2;ids.has(id);n++)id=`${entry.id.slice(0,48)}-${n}`;
     ids.add(id);
-    const type=makeType(id,entry.name.slice(0,40)||id,'#888888');type.styleBits=entry.styleBits;
+    const name=entry.name.slice(0,40)||id, span=entry.span||1, side=size*span;
+    const type=span>1?makeStamp(id,name,'#888888',span):makeType(id,name,'#888888');type.styleBits=entry.styleBits;
     const valid=new Set(patterns(entry.styleBits)), counts=new Map();
     for(const tile of entry.tiles) {
-      if(!valid.has(tile.mask)||(tile.x+1)*size>width||(tile.y+1)*size>height)continue;
-      const pixels=Array(size*size);
-      for(let y=0;y<size;y++)for(let x=0;x<size;x++) {
+      if(!valid.has(tile.mask)||tile.x*size+side>width||tile.y*size+side>height)continue;
+      const pixels=Array(side*side);
+      for(let y=0;y<side;y++)for(let x=0;x<side;x++) {
         const i=((tile.y*size+y)*width+tile.x*size+x)*4;
         const color=rgba[i+3]<128?null:'#'+[rgba[i],rgba[i+1],rgba[i+2]].map(n=>n.toString(16).padStart(2,'0')).join('');
-        pixels[y*size+x]=color;if(color)counts.set(color,(counts.get(color)||0)+1);
+        pixels[y*side+x]=color;if(color)counts.set(color,(counts.get(color)||0)+1);
       }
       type.tiles[tile.mask]=pixels;
     }
